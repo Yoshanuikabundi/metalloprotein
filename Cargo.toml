@@ -1,0 +1,21 @@
+[package]
+name = "metalloprotein"
+version = "0.1.0"
+edition = "2021"
+description = "Biomolecular visualization for the Web and Desktop alike"
+repository = "https://github.com/yoshanuikabundi/metalloprotein"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = [] # Keywords for discoverability. crates.io accepts a maximum of 5 keywords fitting the regex /[a-Z][a-Z0-9\-_]{0,19}/
+categories = [] # Categories for discoverability. crates.io accepts a maximum of 5 categories from the list at https://crates.io/category_slugs
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chemfiles = "0.10.2"
+bevy = { version = "0.6.0", features = ["dynamic"] } # Remove dynamic feature for releases
+smooth-bevy-cameras = "0.2.0"
+bevy_mod_picking = "0.5.4"
+bevy_tweening = "0.3.2"
+serde = "1.0.136"
+clap = { version = "3.1.2", features = ["derive"] }
