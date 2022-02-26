@@ -3,13 +3,19 @@
 use bevy::prelude::*;
 use clap::Parser;
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod camera;
-use camera::{MetalloproteinCameraPlugin, PickableBundle};
+use camera::MetalloproteinCameraPlugin;
 
 mod elements;
 use elements::ElementMaterials;
+
+mod chemicals;
+use chemicals::spawn_frame;
+
+mod representations;
+use representations::{spacefill_rep, SpaceFill};
 
 type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
 
@@ -18,11 +24,11 @@ fn main() {
         .insert_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)
         .add_plugin(MetalloproteinCameraPlugin)
-        .insert_resource(Args::parse())
         .init_resource::<AtomMesh>()
         .init_resource::<ElementMaterials>()
         .add_startup_system(setup)
-        .add_startup_system(read_file.chain(error_handler))
+        .add_system(read_file.chain(error_handler))
+        .add_system(spacefill_rep)
         .run();
 }
 
@@ -41,42 +47,6 @@ struct Args {
     structure: Option<PathBuf>,
 }
 
-fn read_file(
-    mut commands: Commands,
-    args: Res<Args>,
-    atom_mesh: Res<AtomMesh>,
-    elem_materials: Res<ElementMaterials>,
-) -> Result<()> {
-    let args = args.as_ref();
-    if let Some(path) = &args.structure {
-        let mut trajectory = chemfiles::Trajectory::open(path, 'r')?;
-        let mut frame = chemfiles::Frame::new();
-
-        trajectory.read(&mut frame)?;
-
-        for (i, &[x, y, z]) in frame.positions().iter().enumerate() {
-            let atom = frame.atom(i);
-            let r = if atom.vdw_radius() == 0.0 {
-                1.0
-            } else {
-                atom.vdw_radius()
-            };
-            let n = atom.atomic_number();
-
-            commands
-                .spawn_bundle(PbrBundle {
-                    mesh: atom_mesh.0.clone(),
-                    material: elem_materials.0[n as usize].clone(),
-                    transform: Transform::from_xyz(x as f32, y as f32, z as f32)
-                        .with_scale(Vec3::splat(r as f32)),
-                    ..Default::default()
-                })
-                .insert_bundle(PickableBundle::default());
-        }
-    };
-    Ok(())
-}
-
 struct AtomMesh(Handle<Mesh>);
 
 impl FromWorld for AtomMesh {
@@ -89,11 +59,52 @@ impl FromWorld for AtomMesh {
     }
 }
 
-/// set up a simple 3D scene
-fn setup(mut commands: Commands, mut atom_mesh: ResMut<AtomMesh>) {
+fn setup(mut commands: Commands) {
     // light
     commands.spawn_bundle(DirectionalLightBundle {
+        directional_light: DirectionalLight {
+            illuminance: 10000.0,
+            ..Default::default()
+        },
         transform: Transform::from_xyz(4.0, 8.0, 4.0),
         ..Default::default()
     });
+
+    let args = Args::parse();
+    if let Some(path) = &args.structure {
+        commands.spawn_bundle((
+            StructureFile::from(path),
+            Transform::default(),
+            GlobalTransform::default(),
+            SpaceFill,
+        ));
+    };
+}
+
+#[derive(Default, Component)]
+struct StructureFile(PathBuf);
+
+impl<T> From<T> for StructureFile
+where
+    T: AsRef<Path>,
+{
+    fn from(path: T) -> Self {
+        Self(PathBuf::from(path.as_ref()))
+    }
+}
+
+fn read_file(
+    mut commands: Commands,
+    query: Query<(Entity, &StructureFile), Added<StructureFile>>,
+) -> Result<()> {
+    for (entity, file) in query.iter() {
+        let StructureFile(path) = file;
+        let mut trajectory = chemfiles::Trajectory::open(path, 'r')?;
+        let mut frame = chemfiles::Frame::new();
+
+        trajectory.read(&mut frame)?;
+
+        spawn_frame(&mut commands, &frame, entity);
+    }
+    Ok(())
 }

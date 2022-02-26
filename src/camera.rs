@@ -1,7 +1,5 @@
 use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
-pub use bevy_mod_picking::PickableBundle;
-use bevy_mod_picking::{DefaultPickingPlugins, PickingCameraBundle};
 use smooth_bevy_cameras::{
     controllers::orbit::{
         ControlEvent, OrbitCameraBundle, OrbitCameraController, OrbitCameraPlugin,
@@ -16,21 +14,18 @@ impl Plugin for MetalloproteinCameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(LookTransformPlugin)
             .add_plugin(OrbitCameraPlugin::new(true))
-            .add_plugins(DefaultPickingPlugins)
             .add_startup_system(setup_camera)
             .add_system(camera_input_map);
     }
 }
 
 fn setup_camera(mut commands: Commands) {
-    commands
-        .spawn_bundle(OrbitCameraBundle::new(
-            OrbitCameraController::default(),
-            PerspectiveCameraBundle::default(),
-            Vec3::new(-2.0, 5.0, 5.0),
-            Vec3::new(0., 0., 0.),
-        ))
-        .insert_bundle(PickingCameraBundle::default());
+    commands.spawn_bundle(OrbitCameraBundle::new(
+        OrbitCameraController::default(),
+        PerspectiveCameraBundle::default(),
+        Vec3::new(-2.0, 5.0, 5.0),
+        Vec3::new(0., 0., 0.),
+    ));
 }
 
 pub fn camera_input_map(

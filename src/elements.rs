@@ -13,8 +13,8 @@ impl FromWorld for ElementMaterials {
 }
 
 static ELEMENTCOLOURS: [Color; 119] = [
-    Color::WHITE,         // Virtual sites/dummy atoms
-    Color::ANTIQUE_WHITE, // Hydrogen,H,1
+    Color::ANTIQUE_WHITE, // Virtual sites/dummy atoms
+    Color::WHITE,         // Hydrogen,H,1
     Color::BLACK,         // Helium,He,2
     Color::BLACK,         // Lithium,Li,3
     Color::BLACK,         // Beryllium,Be,4
