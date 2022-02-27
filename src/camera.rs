@@ -55,6 +55,8 @@ fn update_cog(
                 })
             })
             .unwrap();
+
+        println!("{cog:?}")
     }
 }
 

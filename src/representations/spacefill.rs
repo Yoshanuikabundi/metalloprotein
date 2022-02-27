@@ -1,14 +1,11 @@
 use crate::chemicals::{AtomPosition, BondElements, BondPositions, Element};
 use crate::elements::ELEMENTRADII;
-use crate::representations::{
-    AtomMesh, BondMesh, ElementMaterials, Representation, RepresentationList,
-};
+use crate::representations::{AtomMesh, ElementMaterials, Representation};
 use bevy::prelude::*;
-use std::collections::HashSet;
 use std::hash::Hash;
 
-#[derive(Component, PartialEq, Eq, Debug, Hash, Clone)]
-pub(crate) struct SpaceFill;
+#[derive(Component, PartialEq, Eq, Debug, Hash, Clone, Default)]
+pub struct SpaceFill;
 
 impl Representation for SpaceFill {
     fn spawn_atom(
@@ -45,24 +42,9 @@ impl Representation for SpaceFill {
         _parent: Entity,
         _elem: &BondElements,
         _pos: &BondPositions,
-        _atom_mesh: &BondMesh,
+        _meshes: &mut Assets<Mesh>,
         _element_mats: &ElementMaterials,
     ) {
         ()
-    }
-}
-
-#[derive(Component, Default, Debug)]
-pub(crate) struct SpaceFillList(HashSet<SpaceFill>);
-
-impl RepresentationList for SpaceFillList {
-    type Rep = SpaceFill;
-
-    fn get_set(&self) -> &HashSet<Self::Rep> {
-        &self.0
-    }
-
-    fn get_set_mut(&mut self) -> &mut HashSet<Self::Rep> {
-        &mut self.0
     }
 }

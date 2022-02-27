@@ -48,13 +48,13 @@ pub(crate) fn spawn_frame(commands: &mut Commands, frame: &Frame, parent: Entity
     spawn_bonds(commands, frame, parent);
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Debug)]
 /// Entities with this component are atoms
 pub(crate) struct Element {
     pub(crate) atomic_number: i32,
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Debug)]
 pub(crate) struct AtomIndex(usize);
 
 #[derive(Component, Default, Debug)]
@@ -73,7 +73,7 @@ impl Element {
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Debug)]
 struct BondIndices(AtomIndex, AtomIndex);
 
 impl BondIndices {
@@ -82,22 +82,19 @@ impl BondIndices {
     }
 }
 
-#[derive(Component, Default)]
-pub(crate) struct BondPositions([f32; 3], [f32; 3]);
+#[derive(Component, Default, Debug)]
+pub(crate) struct BondPositions(pub Vec3, pub Vec3);
 
 impl BondPositions {
     fn new(a: [f64; 3], b: [f64; 3]) -> Self {
-        let [x_a, y_a, z_a] = a;
-        let [x_b, y_b, z_b] = b;
-        Self(
-            [x_a as f32, y_a as f32, z_a as f32],
-            [x_b as f32, y_b as f32, z_b as f32],
-        )
+        let a = Vec3::new(a[0] as f32, a[1] as f32, a[2] as f32);
+        let b = Vec3::new(b[0] as f32, b[1] as f32, b[2] as f32);
+        Self(a, b)
     }
 }
 
-#[derive(Component, Default)]
-pub(crate) struct BondElements(Element, Element);
+#[derive(Component, Default, Debug)]
+pub(crate) struct BondElements(pub Element, pub Element);
 
 #[derive(Bundle, Default)]
 struct BondBundle {

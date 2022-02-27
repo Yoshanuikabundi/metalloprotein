@@ -1,13 +1,41 @@
 use crate::chemicals::{AtomPosition, BondElements, BondPositions, Element};
 use crate::ElementMaterials;
 use bevy::prelude::*;
-use std::collections::hash_map::RandomState;
-use std::collections::hash_set::Difference;
 use std::collections::HashSet;
 use std::hash::Hash;
 
-mod spacefill;
-pub(crate) use spacefill::{SpaceFill, SpaceFillList};
+macro_rules! representation {
+    ($($mod:ident, $struc:ident);+) => {
+        $(
+            pub mod $mod;
+            pub use $mod::$struc;
+        )+
+
+        /// Bundle for entities that can be represented
+        ///
+        /// Contains `RepresentationList`s for all representations
+        #[derive(Bundle, Default)]
+        pub(crate) struct RepresentableBundle {
+            $($mod: RepresentationList<$struc>),+
+        }
+
+        pub(crate) struct RepresentationPlugin;
+
+        impl Plugin for RepresentationPlugin {
+            fn build(&self, app: &mut App) {
+                app
+                    .init_resource::<AtomMesh>()
+                    $(.add_system(rep_system::<$struc>.label("representations")))+;
+            }
+        }
+    };
+}
+
+representation! {
+    spacefill, SpaceFill;
+    ball_and_stick, BallAndStick;
+    licorice, Licorice
+}
 
 pub(crate) trait Representation: Component + Eq + Hash + Clone + std::fmt::Debug {
     fn spawn(
@@ -18,7 +46,7 @@ pub(crate) trait Representation: Component + Eq + Hash + Clone + std::fmt::Debug
         q_atoms: &Query<(&Element, &AtomPosition)>,
         q_bonds: &Query<(&BondElements, &BondPositions)>,
         atom_mesh: &AtomMesh,
-        bond_mesh: &BondMesh,
+        meshes: &mut Assets<Mesh>,
         element_mats: &ElementMaterials,
     ) {
         for &child in children.iter() {
@@ -26,7 +54,7 @@ pub(crate) trait Representation: Component + Eq + Hash + Clone + std::fmt::Debug
                 self.spawn_atom(commands, parent, elem, pos, atom_mesh, element_mats)
             }
             if let Ok((elem, pos)) = q_bonds.get(child) {
-                self.spawn_bond(commands, parent, elem, pos, bond_mesh, element_mats)
+                self.spawn_bond(commands, parent, elem, pos, meshes, element_mats)
             }
         }
     }
@@ -47,42 +75,45 @@ pub(crate) trait Representation: Component + Eq + Hash + Clone + std::fmt::Debug
         parent: Entity,
         elem: &BondElements,
         pos: &BondPositions,
-        bond_mesh: &BondMesh,
+        meshes: &mut Assets<Mesh>,
         element_mats: &ElementMaterials,
     );
 }
 
-pub(crate) trait RepresentationList: Component + std::fmt::Debug {
-    type Rep: Representation;
-    fn get_set(&self) -> &HashSet<Self::Rep>;
-    fn get_set_mut(&mut self) -> &mut HashSet<Self::Rep>;
+#[derive(Default, Debug, Component)]
+pub(crate) struct RepresentationList<R>(HashSet<R>)
+where
+    R: Representation + Default;
 
-    fn difference<'a>(&'a self, other: &'a Self) -> Difference<'a, Self::Rep, RandomState> {
-        self.get_set().difference(other.get_set())
+impl<R: Representation + Default> RepresentationList<R> {
+    pub fn insert(&mut self, value: R) -> bool {
+        self.0.insert(value)
     }
 
-    fn insert(&mut self, value: Self::Rep) -> bool {
-        self.get_set_mut().insert(value)
+    pub fn contains(&self, value: &R) -> bool {
+        self.0.contains(value)
     }
 
-    fn contains(&self, value: &Self::Rep) -> bool {
-        self.get_set().contains(value)
+    /// Add a default representation to the list
+    pub fn insert_default(&mut self) {
+        self.insert(R::default());
     }
 }
 
-fn rep_system<RL>(
+fn rep_system<R>(
     mut commands: Commands,
-    q_parent: Query<(Entity, &Children, &RL), Changed<RL>>,
+    q_parent: Query<(Entity, &Children, &RepresentationList<R>), Changed<RepresentationList<R>>>,
     q_atoms: Query<(&Element, &AtomPosition)>,
     q_bonds: Query<(&BondElements, &BondPositions)>,
-    q_reps: Query<(Entity, &RL::Rep)>,
+    q_reps: Query<(Entity, &R)>,
     atom_mesh: Res<AtomMesh>,
-    bond_mesh: Res<BondMesh>,
+    mut meshes: ResMut<Assets<Mesh>>,
     element_mats: Res<ElementMaterials>,
 ) where
-    RL: RepresentationList,
+    R: Representation + Default,
 {
     for (parent, children, reps) in q_parent.iter() {
+        println!("Updating representations of {parent:?}");
         //TODO: Remove/amortize this allocation
         let mut existing_reps = HashSet::new();
         for &child in children.iter() {
@@ -90,13 +121,15 @@ fn rep_system<RL>(
             if let Ok(rep) = q_reps.get_component(child) {
                 if reps.contains(rep) {
                     existing_reps.insert(rep.clone());
+                    println!("Recorded existing rep {rep:?}")
                 } else {
                     commands.entity(child).despawn_recursive();
+                    println!("Removed rep {rep:?}");
                 }
             }
         }
         // Add reps missing from children
-        for rep in reps.get_set().difference(&existing_reps) {
+        for rep in reps.0.difference(&existing_reps) {
             rep.spawn(
                 &mut commands,
                 parent,
@@ -104,20 +137,11 @@ fn rep_system<RL>(
                 &q_atoms,
                 &q_bonds,
                 atom_mesh.as_ref(),
-                bond_mesh.as_ref(),
+                meshes.as_mut(),
                 element_mats.as_ref(),
             );
+            println!("Spawned rep {rep:?}");
         }
-    }
-}
-
-pub(crate) struct RepresentationPlugin;
-
-impl Plugin for RepresentationPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_system(rep_system::<SpaceFillList>)
-            .init_resource::<AtomMesh>()
-            .init_resource::<BondMesh>();
     }
 }
 
@@ -129,17 +153,6 @@ impl FromWorld for AtomMesh {
         Self(meshes.add(Mesh::from(shape::Icosphere {
             radius: 1.0,
             subdivisions: 3,
-        })))
-    }
-}
-
-pub(crate) struct BondMesh(Handle<Mesh>);
-
-impl FromWorld for BondMesh {
-    fn from_world(world: &mut World) -> Self {
-        let mut meshes = world.get_resource_mut::<Assets<Mesh>>().unwrap();
-        Self(meshes.add(Mesh::from(shape::Capsule {
-            ..Default::default()
         })))
     }
 }

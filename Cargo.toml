@@ -12,7 +12,7 @@ categories = [] # Categories for discoverability. crates.io accepts a maximum of
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chemfiles = "0.10.2"
+chemfiles = {version = "0.10.2", features = ["build-from-sources"]}
 bevy = { version = "0.6.0", features = ["dynamic"] } # Remove dynamic feature for releases
 smooth-bevy-cameras = "0.2.0"
 bevy_mod_picking = "0.5.4"

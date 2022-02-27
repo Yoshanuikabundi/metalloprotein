@@ -5,29 +5,32 @@ use clap::Parser;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
-mod camera;
+pub mod camera;
 use camera::MetalloproteinCameraPlugin;
 
-mod elements;
+pub mod elements;
 use elements::ElementMaterials;
 
-mod chemicals;
+pub mod chemicals;
 use chemicals::spawn_frame;
 
-mod representations;
-use representations::{RepresentationList, RepresentationPlugin, SpaceFill, SpaceFillList};
+pub mod representations;
+use representations::{Licorice, RepresentableBundle, RepresentationList, RepresentationPlugin};
 
 type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
 
 fn main() {
     App::new()
         .insert_resource(Msaa { samples: 4 })
+        .insert_resource(ClearColor(Color::rgb(1.0, 1.0, 1.0)))
         .add_plugins(DefaultPlugins)
         .add_plugin(MetalloproteinCameraPlugin)
         .init_resource::<ElementMaterials>()
         .add_startup_system(setup)
-        .add_system(read_file.chain(error_handler))
+        .add_system(read_file.chain(error_handler).after("representations"))
         .add_plugin(RepresentationPlugin)
+        .add_system(animate_light_direction)
+        .add_system(report_tick.before("representations"))
         .run();
 }
 
@@ -35,6 +38,11 @@ fn error_handler(In(result): In<Result<()>>) {
     if let Err(err) = result {
         panic!("{}", err);
     }
+}
+
+fn report_tick(time: Res<Time>) {
+    let time = time.time_since_startup();
+    println!("Tick! The time is {time:?}");
 }
 
 /// Simple program to greet a person
@@ -48,26 +56,46 @@ struct Args {
 
 fn setup(mut commands: Commands) {
     // light
+    commands.insert_resource(AmbientLight {
+        color: Color::WHITE,
+        brightness: 0.5,
+        ..Default::default()
+    });
+
     commands.spawn_bundle(DirectionalLightBundle {
         directional_light: DirectionalLight {
             illuminance: 10000.0,
             ..Default::default()
         },
-        transform: Transform::from_xyz(4.0, 8.0, 4.0),
+        transform: Transform {
+            translation: Vec3::new(0.0, 2.0, 0.0),
+            rotation: Quat::from_rotation_x(-std::f32::consts::FRAC_PI_4),
+            ..Default::default()
+        },
         ..Default::default()
     });
 
     let args = Args::parse();
     if let Some(path) = &args.structure {
-        commands.spawn_bundle((
-            StructureFile::from(path),
-            Transform::default(),
-            GlobalTransform::default(),
-            Visibility::default(),
-            ComputedVisibility::default(),
-            SpaceFillList::default(),
-        ));
+        commands
+            .spawn_bundle((
+                StructureFile::from(path),
+                Transform::default(),
+                GlobalTransform::default(),
+                Visibility::default(),
+                ComputedVisibility::default(),
+            ))
+            .insert_bundle(RepresentableBundle::default());
     };
+}
+
+fn animate_light_direction(
+    time: Res<Time>,
+    mut query: Query<&mut Transform, With<DirectionalLight>>,
+) {
+    for mut transform in query.iter_mut() {
+        transform.rotate(Quat::from_rotation_y(time.delta_seconds() * 0.5));
+    }
 }
 
 #[derive(Default, Component)]
@@ -84,7 +112,10 @@ where
 
 fn read_file(
     mut commands: Commands,
-    mut query: Query<(Entity, &StructureFile, &mut SpaceFillList), Added<StructureFile>>,
+    mut query: Query<
+        (Entity, &StructureFile, &mut RepresentationList<Licorice>),
+        Added<StructureFile>,
+    >,
 ) -> Result<()> {
     for (entity, file, mut reps) in query.iter_mut() {
         let StructureFile(path) = file;
@@ -95,7 +126,8 @@ fn read_file(
 
         spawn_frame(&mut commands, &frame, entity);
 
-        reps.insert(SpaceFill);
+        reps.insert_default();
+        println!("Spawned frame from {path:?} with reps {reps:?}")
     }
     Ok(())
 }

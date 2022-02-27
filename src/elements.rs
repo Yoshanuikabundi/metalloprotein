@@ -19,7 +19,7 @@ static ELEMENTCOLOURS: [Color; 119] = [
     Color::BLACK,         // Lithium,Li,3
     Color::BLACK,         // Beryllium,Be,4
     Color::BLACK,         // Boron,B,5
-    Color::GRAY,          // Carbon,C,6
+    Color::DARK_GRAY,     // Carbon,C,6
     Color::BLUE,          // Nitrogen,N,7
     Color::RED,           // Oxygen,O,8
     Color::BLACK,         // Fluorine,F,9
