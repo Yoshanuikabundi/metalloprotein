@@ -139,6 +139,10 @@ fn control_system(
                 ControlEvent::Orbit(delta) => {
                     look_angles.add_yaw(-delta.x);
                     look_angles.add_pitch(delta.y);
+                    println!(
+                        "{delta:?}, {look_angles:?}, {:?}",
+                        transform.look_direction()
+                    );
                 }
                 ControlEvent::TranslateTarget(delta) => {
                     let right_dir = scene_transform.rotation * -Vec3::X;

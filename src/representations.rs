@@ -109,6 +109,7 @@ fn rep_system<R>(
     atom_mesh: Res<AtomMesh>,
     mut meshes: ResMut<Assets<Mesh>>,
     element_mats: Res<ElementMaterials>,
+    mut events: EventWriter<crate::camera::ControlEvent>,
 ) where
     R: Representation + Default,
 {
@@ -141,6 +142,7 @@ fn rep_system<R>(
                 element_mats.as_ref(),
             );
             println!("Spawned rep {rep:?}");
+            // events.send(crate::camera::ControlEvent::ReCenter);
         }
     }
 }

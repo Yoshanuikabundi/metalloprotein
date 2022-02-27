@@ -30,7 +30,6 @@ fn main() {
         .add_system(read_file.chain(error_handler).after("representations"))
         .add_plugin(RepresentationPlugin)
         .add_system(animate_light_direction)
-        .add_system(report_tick.before("representations"))
         .run();
 }
 
@@ -38,11 +37,6 @@ fn error_handler(In(result): In<Result<()>>) {
     if let Err(err) = result {
         panic!("{}", err);
     }
-}
-
-fn report_tick(time: Res<Time>) {
-    let time = time.time_since_startup();
-    println!("Tick! The time is {time:?}");
 }
 
 /// Simple program to greet a person
