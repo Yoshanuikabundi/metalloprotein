@@ -15,7 +15,7 @@ mod chemicals;
 use chemicals::spawn_frame;
 
 mod representations;
-use representations::{spacefill_rep, SpaceFill};
+use representations::{RepresentationList, RepresentationPlugin, SpaceFill, SpaceFillList};
 
 type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
 
@@ -24,11 +24,10 @@ fn main() {
         .insert_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)
         .add_plugin(MetalloproteinCameraPlugin)
-        .init_resource::<AtomMesh>()
         .init_resource::<ElementMaterials>()
         .add_startup_system(setup)
         .add_system(read_file.chain(error_handler))
-        .add_system(spacefill_rep)
+        .add_plugin(RepresentationPlugin)
         .run();
 }
 
@@ -45,18 +44,6 @@ struct Args {
     /// Path to chemical structure file
     #[clap(short, long)]
     structure: Option<PathBuf>,
-}
-
-struct AtomMesh(Handle<Mesh>);
-
-impl FromWorld for AtomMesh {
-    fn from_world(world: &mut World) -> Self {
-        let mut meshes = world.get_resource_mut::<Assets<Mesh>>().unwrap();
-        Self(meshes.add(Mesh::from(shape::Icosphere {
-            radius: 1.0,
-            subdivisions: 3,
-        })))
-    }
 }
 
 fn setup(mut commands: Commands) {
@@ -76,7 +63,9 @@ fn setup(mut commands: Commands) {
             StructureFile::from(path),
             Transform::default(),
             GlobalTransform::default(),
-            SpaceFill,
+            Visibility::default(),
+            ComputedVisibility::default(),
+            SpaceFillList::default(),
         ));
     };
 }
@@ -95,9 +84,9 @@ where
 
 fn read_file(
     mut commands: Commands,
-    query: Query<(Entity, &StructureFile), Added<StructureFile>>,
+    mut query: Query<(Entity, &StructureFile, &mut SpaceFillList), Added<StructureFile>>,
 ) -> Result<()> {
-    for (entity, file) in query.iter() {
+    for (entity, file, mut reps) in query.iter_mut() {
         let StructureFile(path) = file;
         let mut trajectory = chemfiles::Trajectory::open(path, 'r')?;
         let mut frame = chemfiles::Frame::new();
@@ -105,6 +94,8 @@ fn read_file(
         trajectory.read(&mut frame)?;
 
         spawn_frame(&mut commands, &frame, entity);
+
+        reps.insert(SpaceFill);
     }
     Ok(())
 }
