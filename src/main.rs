@@ -121,7 +121,6 @@ fn read_file(
         spawn_frame(&mut commands, &frame, entity);
 
         reps.insert_default();
-        println!("Spawned frame from {path:?} with reps {reps:?}")
     }
     Ok(())
 }

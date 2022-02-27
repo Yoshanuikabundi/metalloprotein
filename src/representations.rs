@@ -114,7 +114,6 @@ fn rep_system<R>(
     R: Representation + Default,
 {
     for (parent, children, reps) in q_parent.iter() {
-        println!("Updating representations of {parent:?}");
         //TODO: Remove/amortize this allocation
         let mut existing_reps = HashSet::new();
         for &child in children.iter() {
@@ -122,10 +121,8 @@ fn rep_system<R>(
             if let Ok(rep) = q_reps.get_component(child) {
                 if reps.contains(rep) {
                     existing_reps.insert(rep.clone());
-                    println!("Recorded existing rep {rep:?}")
                 } else {
                     commands.entity(child).despawn_recursive();
-                    println!("Removed rep {rep:?}");
                 }
             }
         }
@@ -141,8 +138,7 @@ fn rep_system<R>(
                 meshes.as_mut(),
                 element_mats.as_ref(),
             );
-            println!("Spawned rep {rep:?}");
-            // events.send(crate::camera::ControlEvent::ReCenter);
+            events.send(crate::camera::ControlEvent::ReCenter);
         }
     }
 }
