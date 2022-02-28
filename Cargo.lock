@@ -101,15 +101,6 @@ checksum = "159bb86af3a200e19a068f4224eae4c8bb2d0fa054c7e5d1cacd5cef95e684cd"
 
 [[package]]
 name = "approx"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f2a05fd1bd10b2527e20a2cd32d8873d115b8b39fe219ee25f42a8aca6ba278"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
-name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
@@ -770,7 +761,7 @@ version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0d4a4bed46200615e070897a551d2389d49cdaff048e825e7fa6caef4dc57c6"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "bevy_app",
  "bevy_ecs",
  "bevy_input",
@@ -1575,7 +1566,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc32c2334f00ca5ac3695c5009ae35da21da8c62d255b5b96d56e2597a637a38"
 dependencies = [
  "ab_glyph",
- "approx 0.5.1",
+ "approx",
  "xi-unicode",
 ]
 
@@ -1988,7 +1979,6 @@ dependencies = [
  "chemfiles",
  "clap",
  "serde",
- "smooth-bevy-cameras",
 ]
 
 [[package]]
@@ -2773,17 +2763,6 @@ version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2dd574626839106c320a323308629dcb1acfc96e32a8cba364ddc61ac23ee83"
 dependencies = [
- "serde",
-]
-
-[[package]]
-name = "smooth-bevy-cameras"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63e2ea6d4cf1ee6e40e804e50b2bb73a06b7dc4e23ea0f427cf77971796310f6"
-dependencies = [
- "approx 0.4.0",
- "bevy",
  "serde",
 ]
 

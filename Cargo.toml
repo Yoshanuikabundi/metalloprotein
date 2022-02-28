@@ -14,7 +14,6 @@ categories = [] # Categories for discoverability. crates.io accepts a maximum of
 [dependencies]
 chemfiles = {version = "0.10.2", features = ["build-from-sources"]}
 bevy = { version = "0.6.0", features = ["dynamic"] } # Remove dynamic feature for releases
-smooth-bevy-cameras = "0.2.0"
 bevy_mod_picking = "0.5.4"
 bevy_tweening = "0.3.2"
 serde = "1.0.136"
