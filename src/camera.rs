@@ -10,11 +10,9 @@ pub struct MetalloproteinCameraPlugin;
 impl Plugin for MetalloproteinCameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_startup_system(setup_camera)
-            .insert_resource(GeometryBounds::default())
             .add_event::<CamControlEvent>()
             .add_system(camera_control)
-            .add_system(camera_input_map)
-            .add_system(update_cog);
+            .add_system(camera_input_map);
     }
 }
 
@@ -45,35 +43,12 @@ fn setup_camera(mut commands: Commands) {
         .insert(PanOrbitCamera::default());
 }
 
-#[derive(Default, Debug, Component)]
-struct GeometryBounds {
-    cog: Vec3,
-    radius: f32,
-}
-
 fn f32_cmp(a: &f32, b: &f32) -> Ordering {
     a.partial_cmp(b).unwrap_or(if a.is_nan() {
         Ordering::Greater
     } else {
         Ordering::Less
     })
-}
-
-fn update_cog(
-    mut bounds: ResMut<GeometryBounds>,
-    query: Query<&GlobalTransform, (With<Handle<Mesh>>, Changed<GlobalTransform>)>,
-) {
-    if !query.is_empty() {
-        let xyz: Vec3 = query.iter().map(|transform| &transform.translation).sum();
-        let n = query.iter().count() as f32;
-        bounds.cog = xyz / n;
-
-        bounds.radius = query
-            .iter()
-            .map(|transform| transform.translation.length())
-            .max_by(f32_cmp)
-            .unwrap();
-    }
 }
 
 #[derive(Debug)]
@@ -105,7 +80,8 @@ fn camera_input_map(
     let mouse_wheel_zoom_sensitivity = 1.0;
     let pixels_per_line = 53.0;
 
-    let window = get_primary_window_size(&windows);
+    let window = windows.get_primary().unwrap();
+    let window = Vec2::new(window.width() as f32, window.height() as f32);
 
     let cursor_delta: Vec2 = mouse_motion.iter().map(|v| &v.delta).sum();
 
@@ -143,15 +119,14 @@ fn camera_input_map(
 }
 
 fn camera_control(
-    mut query: Query<(&mut PanOrbitCamera, &mut Transform, &PerspectiveProjection)>,
-    geom_bounds: Res<GeometryBounds>,
+    mut cameras: Query<(&mut PanOrbitCamera, &mut Transform, &PerspectiveProjection)>,
     mut events: EventReader<CamControlEvent>,
+    changed_meshes: Query<&GlobalTransform, (With<Handle<Mesh>>, Changed<GlobalTransform>)>,
 ) {
-    for (mut pan_orbit, mut transform, proj) in query.iter_mut() {
+    for (mut pan_orbit, mut transform, proj) in cameras.iter_mut() {
         let mut any = false;
         for event in events.iter() {
             any = true;
-            println!("{event:?}");
             match *event {
                 CamControlEvent::Orbit(delta) => {
                     let delta_x = if pan_orbit.flipped { -delta.x } else { delta.x };
@@ -183,8 +158,20 @@ fn camera_control(
                     pan_orbit.radius = f32::max(pan_orbit.radius, 0.05);
                 }
                 CamControlEvent::ReCenter => {
-                    pan_orbit.focus = geom_bounds.cog;
-                    pan_orbit.radius = f32::max(geom_bounds.radius, 0.05);
+                    let xyz: Vec3 = changed_meshes
+                        .iter()
+                        .map(|transform| &transform.translation)
+                        .sum();
+                    let n = changed_meshes.iter().count() as f32;
+
+                    let radius = changed_meshes
+                        .iter()
+                        .map(|transform| transform.translation.length())
+                        .max_by(f32_cmp)
+                        .unwrap();
+
+                    pan_orbit.focus = xyz / n;
+                    pan_orbit.radius = f32::max(radius, 0.05);
                 }
                 CamControlEvent::CheckUpsideDown => {
                     // only check for upside down when orbiting started or ended this frame
@@ -206,10 +193,4 @@ fn camera_control(
                 pan_orbit.focus + rot_matrix.mul_vec3(Vec3::new(0.0, 0.0, pan_orbit.radius));
         }
     }
-}
-
-fn get_primary_window_size(windows: &Res<Windows>) -> Vec2 {
-    let window = windows.get_primary().unwrap();
-    let window = Vec2::new(window.width() as f32, window.height() as f32);
-    window
 }
