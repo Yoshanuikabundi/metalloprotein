@@ -109,7 +109,7 @@ fn rep_system<R>(
     atom_mesh: Res<AtomMesh>,
     mut meshes: ResMut<Assets<Mesh>>,
     element_mats: Res<ElementMaterials>,
-    mut events: EventWriter<crate::camera::ControlEvent>,
+    mut events: EventWriter<crate::camera::CamControlEvent>,
 ) where
     R: Representation + Default,
 {
@@ -138,7 +138,7 @@ fn rep_system<R>(
                 meshes.as_mut(),
                 element_mats.as_ref(),
             );
-            events.send(crate::camera::ControlEvent::ReCenter);
+            events.send(crate::camera::CamControlEvent::ReCenter);
         }
     }
 }

@@ -2,6 +2,7 @@ use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use std::cmp::max_by;
 use std::cmp::Ordering;
+use std::f32::consts::PI;
 
 #[derive(Default)]
 pub struct MetalloproteinCameraPlugin;
@@ -10,9 +11,9 @@ impl Plugin for MetalloproteinCameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_startup_system(setup_camera)
             .insert_resource(GeometryBounds::default())
-            .add_event::<ControlEvent>()
-            .add_system(pan_orbit_camera)
-            // .add_system(camera_input_map)
+            .add_event::<CamControlEvent>()
+            .add_system(camera_control)
+            .add_system(camera_input_map)
             .add_system(update_cog);
     }
 }
@@ -23,7 +24,7 @@ pub struct PanOrbitCamera {
     /// The "focus point" to orbit around. It is automatically updated when panning the camera
     pub focus: Vec3,
     pub radius: f32,
-    pub upside_down: bool,
+    pub flipped: bool,
 }
 
 impl Default for PanOrbitCamera {
@@ -31,7 +32,7 @@ impl Default for PanOrbitCamera {
         PanOrbitCamera {
             focus: Vec3::ZERO,
             radius: 5.0,
-            upside_down: false,
+            flipped: false,
         }
     }
 }
@@ -75,160 +76,123 @@ fn update_cog(
     }
 }
 
-pub enum ControlEvent {
+#[derive(Debug)]
+pub enum CamControlEvent {
     Orbit(Vec2),
     Roll(Vec2),
     Pan(Vec2),
     Zoom(f32),
     ReCenter,
+    CheckUpsideDown,
 }
 
 fn camera_input_map(
-    mut events: EventWriter<ControlEvent>,
-    mut mouse_wheel_reader: EventReader<MouseWheel>,
-    mut mouse_motion_events: EventReader<MouseMotion>,
+    mut events: EventWriter<CamControlEvent>,
+    mut mouse_wheel: EventReader<MouseWheel>,
+    mut mouse_motion: EventReader<MouseMotion>,
     mouse_buttons: Res<Input<MouseButton>>,
     keyboard: Res<Input<KeyCode>>,
-) {
-    let mouse_rotate_sensitivity = Vec2::splat(0.006);
-    let mouse_translate_sensitivity = Vec2::splat(0.008);
-    let mouse_wheel_zoom_sensitivity = 0.15;
-    let pixels_per_line = 53.0;
-
-    let mut cursor_delta = Vec2::ZERO;
-    for event in mouse_motion_events.iter() {
-        cursor_delta += event.delta;
-    }
-
-    if mouse_buttons.pressed(MouseButton::Left) {
-        events.send(ControlEvent::Orbit(mouse_rotate_sensitivity * cursor_delta));
-    }
-
-    if mouse_buttons.pressed(MouseButton::Right) {
-        events.send(ControlEvent::Pan(
-            mouse_translate_sensitivity * cursor_delta,
-        ));
-    }
-
-    if keyboard.pressed(KeyCode::Equals) {
-        events.send(ControlEvent::ReCenter);
-    }
-
-    let mut scalar = 1.0;
-    for event in mouse_wheel_reader.iter() {
-        // scale the event magnitude per pixel or per line
-        let scroll_amount = match event.unit {
-            MouseScrollUnit::Line => event.y,
-            MouseScrollUnit::Pixel => event.y / pixels_per_line,
-        };
-        scalar *= 1.0 - scroll_amount * mouse_wheel_zoom_sensitivity;
-    }
-    events.send(ControlEvent::Zoom(scalar));
-}
-
-/// Pan the camera with middle mouse click, zoom with scroll wheel, orbit with right mouse click.
-fn pan_orbit_camera(
     windows: Res<Windows>,
-    mut ev_motion: EventReader<MouseMotion>,
-    mut ev_scroll: EventReader<MouseWheel>,
-    input_mouse: Res<Input<MouseButton>>,
-    mut query: Query<(&mut PanOrbitCamera, &mut Transform, &PerspectiveProjection)>,
-    keyboard: Res<Input<KeyCode>>,
-    geom_bounds: Res<GeometryBounds>,
 ) {
-    // change input mapping for orbit and panning here
     let orbit_button = MouseButton::Left;
     let roll_button = MouseButton::Right;
     let pan_button = MouseButton::Middle;
     let recenter_button = KeyCode::Equals;
 
-    let mut pan = Vec2::ZERO;
-    let mut orbit_move = Vec2::ZERO;
-    let mut roll_move = Vec2::ZERO;
-    let mut scroll = 0.0;
-    let mut check_upside_down = false;
+    let mouse_rotate_sensitivity = Vec2::new(PI * 2.0, PI); // Radians per window length
+    let mouse_roll_sensitivity = Vec2::new(PI / 2.0, PI / 4.0); // Radians per window length
+    let mouse_translate_sensitivity = Vec2::splat(1.0);
+    let mouse_wheel_zoom_sensitivity = 1.0;
+    let pixels_per_line = 53.0;
 
-    if input_mouse.pressed(orbit_button) {
-        for ev in ev_motion.iter() {
-            orbit_move += ev.delta;
-        }
+    let window = get_primary_window_size(&windows);
+
+    let cursor_delta: Vec2 = mouse_motion.iter().map(|v| &v.delta).sum();
+
+    if mouse_buttons.pressed(orbit_button) {
+        let delta = mouse_rotate_sensitivity * cursor_delta / window;
+        events.send(CamControlEvent::Orbit(delta));
     }
-    if input_mouse.pressed(roll_button) {
-        for ev in ev_motion.iter() {
-            roll_move += ev.delta;
-        }
+    if mouse_buttons.pressed(roll_button) {
+        let delta = mouse_roll_sensitivity * cursor_delta / window;
+        events.send(CamControlEvent::Roll(delta));
     }
-    if input_mouse.pressed(pan_button) {
-        for ev in ev_motion.iter() {
-            pan += ev.delta;
-        }
+    if mouse_buttons.pressed(pan_button) {
+        let delta = mouse_translate_sensitivity * cursor_delta / window;
+        events.send(CamControlEvent::Pan(delta));
     }
-    for ev in ev_scroll.iter() {
-        scroll += ev.y;
+    if keyboard.pressed(recenter_button) {
+        events.send(CamControlEvent::ReCenter);
     }
-    let recenter = keyboard.pressed(recenter_button);
-    if input_mouse.just_released(orbit_button) || input_mouse.just_pressed(orbit_button) {
-        check_upside_down = true;
+    if mouse_buttons.just_released(orbit_button) || mouse_buttons.just_pressed(orbit_button) {
+        events.send(CamControlEvent::CheckUpsideDown);
     }
 
-    for (mut pan_orbit, mut transform, projection) in query.iter_mut() {
-        if check_upside_down {
-            // only check for upside down when orbiting started or ended this frame
-            // if the camera is "upside" down, panning horizontally would be inverted, so invert the input to make it correct
-            let up = transform.rotation * Vec3::Y;
-            pan_orbit.upside_down = up.y <= 0.0;
-        }
+    let mut zoom = 0.0;
+    for event in mouse_wheel.iter() {
+        // scale the event magnitude per pixel or per line
+        let scroll_amount = match event.unit {
+            MouseScrollUnit::Line => event.y,
+            MouseScrollUnit::Pixel => event.y / pixels_per_line,
+        };
+        zoom += scroll_amount * mouse_wheel_zoom_sensitivity;
+    }
+    if zoom.abs() > 0.0 {
+        events.send(CamControlEvent::Zoom(zoom));
+    }
+}
 
+fn camera_control(
+    mut query: Query<(&mut PanOrbitCamera, &mut Transform, &PerspectiveProjection)>,
+    geom_bounds: Res<GeometryBounds>,
+    mut events: EventReader<CamControlEvent>,
+) {
+    for (mut pan_orbit, mut transform, proj) in query.iter_mut() {
         let mut any = false;
-        if orbit_move.length_squared() > 0.0 {
+        for event in events.iter() {
             any = true;
-            let window = get_primary_window_size(&windows);
-            let delta_x = {
-                let delta = orbit_move.x / window.x * std::f32::consts::PI * 2.0;
-                if pan_orbit.upside_down {
-                    -delta
-                } else {
-                    delta
+            println!("{event:?}");
+            match *event {
+                CamControlEvent::Orbit(delta) => {
+                    let delta_x = if pan_orbit.flipped { -delta.x } else { delta.x };
+                    let yaw = Quat::from_rotation_y(-delta_x);
+                    let pitch = Quat::from_rotation_x(-delta.y);
+                    transform.rotation = transform.rotation * yaw; // rotate around local y axis
+                    transform.rotation = transform.rotation * pitch; // rotate around local x axis
                 }
-            };
-            let delta_y = orbit_move.y / window.y * std::f32::consts::PI;
-            let yaw = Quat::from_rotation_y(-delta_x);
-            let pitch = Quat::from_rotation_x(-delta_y);
-            transform.rotation = transform.rotation * yaw; // rotate around local y axis
-            transform.rotation = transform.rotation * pitch; // rotate around local x axis
-        }
-        if roll_move.x.abs() > 0.0 || roll_move.y.abs() > 0.0 {
-            any = true;
-            let window = get_primary_window_size(&windows);
-            let (delta_x, delta_y) = (roll_move.x / window.x, roll_move.y / window.y);
-            let delta = max_by(delta_x, delta_y, |a, b| f32_cmp(&a.abs(), &b.abs()))
-                * std::f32::consts::PI
-                * 2.0;
-            let roll = Quat::from_rotation_z(-delta);
-            transform.rotation = transform.rotation * roll; // rotate around local z axis
-        }
-        if pan.length_squared() > 0.0 {
-            any = true;
-            // make panning distance independent of resolution and FOV,
-            let window = get_primary_window_size(&windows);
-            pan *= Vec2::new(projection.fov * projection.aspect_ratio, projection.fov) / window;
-            // translate by local axes
-            let right = transform.rotation * Vec3::X * -pan.x;
-            let up = transform.rotation * Vec3::Y * pan.y;
-            // make panning proportional to distance away from focus point
-            let translation = (right + up) * pan_orbit.radius;
-            pan_orbit.focus += translation;
-        }
-        if scroll.abs() > 0.0 {
-            any = true;
-            pan_orbit.radius -= scroll * pan_orbit.radius * 0.2;
-            // dont allow zoom to reach zero or you get stuck
-            pan_orbit.radius = f32::max(pan_orbit.radius, 0.05);
-        }
-        if recenter {
-            any = true;
-            pan_orbit.focus = geom_bounds.cog;
-            pan_orbit.radius = f32::max(geom_bounds.radius, 0.05);
+                CamControlEvent::Roll(delta) => {
+                    let delta = max_by(delta.x, -delta.y, |a, b| f32_cmp(&a.abs(), &b.abs()))
+                        * std::f32::consts::PI
+                        * 2.0;
+                    let roll = Quat::from_rotation_z(-delta);
+                    transform.rotation = transform.rotation * roll; // rotate around local z axis
+                }
+                CamControlEvent::Pan(delta) => {
+                    // make panning distance independent of resolution and FOV
+                    let delta = delta * Vec2::new(proj.fov * proj.aspect_ratio, proj.fov);
+                    // translate by local axes
+                    let right = transform.rotation * Vec3::X * -delta.x;
+                    let up = transform.rotation * Vec3::Y * delta.y;
+                    // make panning proportional to distance away from focus point
+                    let translation = (right + up) * pan_orbit.radius;
+                    pan_orbit.focus += translation;
+                }
+                CamControlEvent::Zoom(scroll) => {
+                    pan_orbit.radius -= scroll * pan_orbit.radius * 0.2;
+                    // dont allow zoom to reach zero or you get stuck
+                    pan_orbit.radius = f32::max(pan_orbit.radius, 0.05);
+                }
+                CamControlEvent::ReCenter => {
+                    pan_orbit.focus = geom_bounds.cog;
+                    pan_orbit.radius = f32::max(geom_bounds.radius, 0.05);
+                }
+                CamControlEvent::CheckUpsideDown => {
+                    // only check for upside down when orbiting started or ended this frame
+                    // if the camera is "upside" down, panning horizontally would be inverted, so invert the input to make it correct
+                    let up = transform.rotation * Vec3::Y;
+                    pan_orbit.flipped = up.y <= 0.0;
+                }
+            }
         }
 
         if any {
