@@ -1,8 +1,9 @@
 #![doc = include_str!("../README.md")]
 
+use bevy::app::AppExit;
 use bevy::prelude::*;
 use clap::Parser;
-use std::error::Error;
+use eyre::Report;
 use std::path::{Path, PathBuf};
 
 pub mod camera;
@@ -12,12 +13,11 @@ pub mod elements;
 use elements::ElementMaterials;
 
 pub mod chemicals;
-use chemicals::spawn_frame;
 
 pub mod representations;
-use representations::{Licorice, RepresentableBundle, RepresentationList, RepresentationPlugin};
+use representations::{RepresentableBundle, RepresentationPlugin};
 
-type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
+type Result<T, E = Report> = std::result::Result<T, E>;
 
 fn main() {
     App::new()
@@ -27,15 +27,16 @@ fn main() {
         .add_plugin(MetalloproteinCameraPlugin)
         .init_resource::<ElementMaterials>()
         .add_startup_system(setup)
-        .add_system(read_file.chain(error_handler).after("representations"))
+        .add_system(read_file.chain(error_handler).before("representations"))
         .add_plugin(RepresentationPlugin)
         .add_system(animate_light_direction)
         .run();
 }
 
-fn error_handler(In(result): In<Result<()>>) {
+fn error_handler(In(result): In<Result<()>>, mut exit: EventWriter<AppExit>) {
     if let Err(err) = result {
-        panic!("{}", err);
+        eprintln!("{:?}", err);
+        exit.send(AppExit);
     }
 }
 
@@ -46,6 +47,16 @@ struct Args {
     /// Path to chemical structure file
     #[clap(short, long)]
     structure: Option<PathBuf>,
+}
+
+#[macro_export]
+macro_rules! wprintln {
+    ($($args:expr),+) => {
+        #[cfg(target_family = "wasm")]
+        web_sys::console::log_1(&format!($($args),+).into());
+        #[cfg(not(target_family = "wasm"))]
+        println!($($args),+);
+    };
 }
 
 fn setup(mut commands: Commands) {
@@ -71,16 +82,33 @@ fn setup(mut commands: Commands) {
 
     let args = Args::parse();
     if let Some(path) = &args.structure {
-        commands
+        commands.spawn_bundle((
+            StructureFile::from(path),
+            Transform::default(),
+            GlobalTransform::default(),
+            Visibility::default(),
+            ComputedVisibility::default(),
+        ));
+    };
+
+    wprintln!("Hello, world! This is metalloprotein.");
+    #[cfg(target_family = "wasm")]
+    {
+        wprintln!("Spawning a helium atom/molecule");
+        let parent = commands
             .spawn_bundle((
-                StructureFile::from(path),
                 Transform::default(),
                 GlobalTransform::default(),
                 Visibility::default(),
                 ComputedVisibility::default(),
             ))
-            .insert_bundle(RepresentableBundle::default());
-    };
+            .insert_bundle(RepresentableBundle::default())
+            .id();
+        let atom_a = chemicals::spawn_atom(&mut commands, parent, 1, Vec3::new(2.0, 2.0, 0.0));
+        let atom_b = chemicals::spawn_atom(&mut commands, parent, 1, Vec3::new(3.0, 2.0, 0.0));
+        chemicals::spawn_bond(&mut commands, parent, atom_a, atom_b);
+        wprintln!("Spawned!");
+    }
 }
 
 fn animate_light_direction(
@@ -90,6 +118,7 @@ fn animate_light_direction(
     for mut transform in query.iter_mut() {
         transform.rotate(Quat::from_rotation_y(time.delta_seconds() * 0.5));
     }
+    // wprintln!("tick");
 }
 
 #[derive(Default, Component)]
@@ -104,23 +133,53 @@ where
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 fn read_file(
     mut commands: Commands,
-    mut query: Query<
-        (Entity, &StructureFile, &mut RepresentationList<Licorice>),
-        Added<StructureFile>,
-    >,
+    query: Query<(Entity, &StructureFile), Added<StructureFile>>,
 ) -> Result<()> {
-    for (entity, file, mut reps) in query.iter_mut() {
+    for (entity, file) in query.iter() {
         let StructureFile(path) = file;
         let mut trajectory = chemfiles::Trajectory::open(path, 'r')?;
         let mut frame = chemfiles::Frame::new();
 
         trajectory.read(&mut frame)?;
 
-        spawn_frame(&mut commands, &frame, entity);
+        chemicals::spawn_frame(&mut commands, &frame, entity)?;
 
-        reps.insert_default();
+        wprintln!("Frame spawned!");
+
+        commands
+            .entity(entity)
+            .insert_bundle(RepresentableBundle::default());
+    }
+    Ok(())
+}
+
+#[cfg(target_family = "wasm")]
+fn read_file(
+    mut commands: Commands,
+    query: Query<(Entity, &StructureFile), Added<StructureFile>>,
+) -> Result<()> {
+    for (entity, file) in query.iter() {
+        let StructureFile(path) = file;
+        wprintln!("Opening PDB {path:?}!");
+
+        let (pdb, _errors) = pdbtbx::open(
+            path.to_str().ok_or(Report::msg("Path not valid unicode"))?,
+            pdbtbx::StrictnessLevel::Loose,
+        )
+        .map_err(|v| v.first().cloned().unwrap())?;
+
+        wprintln!("PDB opened!");
+
+        chemicals::spawn_pdb(&mut commands, entity, pdb)?;
+
+        wprintln!("PDB spawned!");
+
+        commands
+            .entity(entity)
+            .insert_bundle(RepresentableBundle::default());
     }
     Ok(())
 }

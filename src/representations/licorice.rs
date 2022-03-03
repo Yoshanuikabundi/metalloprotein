@@ -1,6 +1,6 @@
 use super::ball_and_stick::BallAndStick;
-use crate::chemicals::{AtomPosition, BondElements, BondPositions, Element};
-use crate::representations::{AtomMesh, ElementMaterials, Representation};
+use crate::chemicals::{AtomPosition, Element};
+use crate::representations::{ElementMaterials, Representation};
 use bevy::prelude::*;
 
 #[derive(Component, PartialEq, Eq, Debug, Hash, Clone)]
@@ -25,24 +25,12 @@ impl Default for Licorice {
 }
 
 impl Representation for Licorice {
-    fn spawn_atom(
-        &self,
-        _commands: &mut Commands,
-        _parent: Entity,
-        _elem: &Element,
-        _pos: &AtomPosition,
-        _atom_mesh: &AtomMesh,
-        _element_mats: &ElementMaterials,
-    ) {
-        ()
-    }
-
     fn spawn_bond(
         &self,
         commands: &mut Commands,
         parent: Entity,
-        elem: &BondElements,
-        pos: &BondPositions,
+        elem: (&Element, &Element),
+        pos: (&AtomPosition, &AtomPosition),
         meshes: &mut Assets<Mesh>,
         element_mats: &ElementMaterials,
     ) {

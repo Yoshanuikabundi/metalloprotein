@@ -1,4 +1,4 @@
-use crate::chemicals::{AtomPosition, BondElements, BondPositions, Element};
+use crate::chemicals::{AtomPosition, Element};
 use crate::elements::ELEMENTRADII;
 use crate::representations::{AtomMesh, ElementMaterials, Representation};
 use bevy::prelude::*;
@@ -22,29 +22,16 @@ impl Representation for SpaceFill {
             n @ 0..=118 => (element_mats.0[n as usize].clone(), ELEMENTRADII[n as usize]),
             _ => (element_mats.0[0].clone(), ELEMENTRADII[0]),
         };
-        let &AtomPosition(x, y, z) = pos;
 
         commands.entity(parent).with_children(|parent| {
             parent
                 .spawn_bundle(PbrBundle {
                     material,
                     mesh,
-                    transform: Transform::from_xyz(x, y, z).with_scale(Vec3::splat(scale)),
+                    transform: Transform::from_translation(pos.0).with_scale(Vec3::splat(scale)),
                     ..Default::default()
                 })
                 .insert(self.clone());
         });
-    }
-
-    fn spawn_bond(
-        &self,
-        _commands: &mut Commands,
-        _parent: Entity,
-        _elem: &BondElements,
-        _pos: &BondPositions,
-        _meshes: &mut Assets<Mesh>,
-        _element_mats: &ElementMaterials,
-    ) {
-        ()
     }
 }

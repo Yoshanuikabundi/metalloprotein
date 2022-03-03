@@ -1,3 +1,4 @@
+use crate::wprintln;
 use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use std::cmp::max_by;
@@ -22,7 +23,6 @@ pub struct PanOrbitCamera {
     /// The "focus point" to orbit around. It is automatically updated when panning the camera
     pub focus: Vec3,
     pub radius: f32,
-    pub flipped: bool,
 }
 
 impl Default for PanOrbitCamera {
@@ -30,7 +30,6 @@ impl Default for PanOrbitCamera {
         PanOrbitCamera {
             focus: Vec3::ZERO,
             radius: 5.0,
-            flipped: false,
         }
     }
 }
@@ -58,7 +57,6 @@ pub enum CamControlEvent {
     Pan(Vec2),
     Zoom(f32),
     ReCenter,
-    CheckUpsideDown,
 }
 
 fn camera_input_map(
@@ -97,11 +95,8 @@ fn camera_input_map(
         let delta = mouse_translate_sensitivity * cursor_delta / window;
         events.send(CamControlEvent::Pan(delta));
     }
-    if keyboard.pressed(recenter_button) {
+    if keyboard.just_pressed(recenter_button) {
         events.send(CamControlEvent::ReCenter);
-    }
-    if mouse_buttons.just_released(orbit_button) || mouse_buttons.just_pressed(orbit_button) {
-        events.send(CamControlEvent::CheckUpsideDown);
     }
 
     let mut zoom = 0.0;
@@ -119,18 +114,18 @@ fn camera_input_map(
 }
 
 fn camera_control(
-    mut cameras: Query<(&mut PanOrbitCamera, &mut Transform, &PerspectiveProjection)>,
+    mut q_cameras: Query<(&mut PanOrbitCamera, &mut Transform, &PerspectiveProjection)>,
     mut events: EventReader<CamControlEvent>,
-    changed_meshes: Query<&GlobalTransform, (With<Handle<Mesh>>, Changed<GlobalTransform>)>,
+    q_meshes: Query<&GlobalTransform, With<Handle<Mesh>>>,
 ) {
-    for (mut pan_orbit, mut transform, proj) in cameras.iter_mut() {
+    for (mut pan_orbit, mut transform, proj) in q_cameras.iter_mut() {
         let mut any = false;
         for event in events.iter() {
             any = true;
+            wprintln!("Processing {event:?}");
             match *event {
                 CamControlEvent::Orbit(delta) => {
-                    let delta_x = if pan_orbit.flipped { -delta.x } else { delta.x };
-                    let yaw = Quat::from_rotation_y(-delta_x);
+                    let yaw = Quat::from_rotation_y(-delta.x);
                     let pitch = Quat::from_rotation_x(-delta.y);
                     transform.rotation = transform.rotation * yaw; // rotate around local y axis
                     transform.rotation = transform.rotation * pitch; // rotate around local x axis
@@ -158,26 +153,23 @@ fn camera_control(
                     pan_orbit.radius = f32::max(pan_orbit.radius, 0.05);
                 }
                 CamControlEvent::ReCenter => {
-                    let xyz: Vec3 = changed_meshes
-                        .iter()
-                        .map(|transform| &transform.translation)
-                        .sum();
-                    let n = changed_meshes.iter().count() as f32;
+                    let n = q_meshes.iter().count();
+                    if n > 0 {
+                        let xyz: Vec3 = q_meshes
+                            .iter()
+                            .map(|transform| &transform.translation)
+                            .sum();
+                        let cog = xyz / n as f32;
 
-                    let radius = changed_meshes
-                        .iter()
-                        .map(|transform| transform.translation.length())
-                        .max_by(f32_cmp)
-                        .unwrap();
+                        let radius = q_meshes
+                            .iter()
+                            .map(|transform| (transform.translation - cog).length())
+                            .max_by(f32_cmp)
+                            .unwrap();
 
-                    pan_orbit.focus = xyz / n;
-                    pan_orbit.radius = f32::max(radius, 0.05);
-                }
-                CamControlEvent::CheckUpsideDown => {
-                    // only check for upside down when orbiting started or ended this frame
-                    // if the camera is "upside" down, panning horizontally would be inverted, so invert the input to make it correct
-                    let up = transform.rotation * Vec3::Y;
-                    pan_orbit.flipped = up.y <= 0.0;
+                        pan_orbit.focus = cog;
+                        pan_orbit.radius = f32::max(radius * 3.0, 0.05);
+                    }
                 }
             }
         }

@@ -7,11 +7,19 @@
 
 ## Installation
 
-### Cargo
+Clone the repo, then build natively:
 
-* Install the rust toolchain in order to have cargo installed by following
-  [this](https://www.rust-lang.org/tools/install) guide.
-* run `cargo install metalloprotein`
+```sh
+cargo build
+```
+
+or for WASM:
+
+```
+cargo build --target wasm32-unknown-unknown
+```
+
+If `wasm-server-runner` is installed, `cargo run --target wasm32-unknown-unknown` will use it to serve the WASM version.
 
 ## License
 

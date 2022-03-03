@@ -1,22 +1,40 @@
-use crate::chemicals::{AtomPosition, BondElements, BondPositions, Element};
+use crate::chemicals::{AtomPosition, BondIndices, Element};
 use crate::ElementMaterials;
+use crate::{error_handler, wprintln, Result};
 use bevy::prelude::*;
 use std::collections::HashSet;
 use std::hash::Hash;
 
-macro_rules! representation {
-    ($($mod:ident, $struc:ident);+) => {
+macro_rules! representations {
+    ($default_mod:ident, $default_struc:ident; $($mod:ident, $struc:ident);*;) => {
+        pub mod $default_mod;
+        pub use $default_mod::$default_struc;
         $(
             pub mod $mod;
             pub use $mod::$struc;
-        )+
+        )*
+
+        pub type DefaultRepresentation = $default_struc;
+
+        impl Default for RepresentationList<DefaultRepresentation> {
+            fn default() -> Self {
+                Self(HashSet::from([DefaultRepresentation::default()]))
+            }
+        }
+
+        $(impl Default for RepresentationList<$struc> {
+            fn default() -> Self {
+                Self(HashSet::default())
+            }
+        })*
 
         /// Bundle for entities that can be represented
         ///
         /// Contains `RepresentationList`s for all representations
         #[derive(Bundle, Default)]
         pub(crate) struct RepresentableBundle {
-            $($mod: RepresentationList<$struc>),+
+            $default_mod: RepresentationList<$default_struc>,
+            $($mod: RepresentationList<$struc>),*
         }
 
         pub(crate) struct RepresentationPlugin;
@@ -25,62 +43,60 @@ macro_rules! representation {
             fn build(&self, app: &mut App) {
                 app
                     .init_resource::<AtomMesh>()
-                    $(.add_system(rep_system::<$struc>.label("representations")))+;
+                    .add_system(rep_system::<$default_struc>.chain(error_handler).label("representations"))
+                    $(.add_system(rep_system::<$struc>.chain(error_handler).label("representations")))*;
             }
         }
     };
 }
 
-representation! {
-    spacefill, SpaceFill;
+representations! {
     ball_and_stick, BallAndStick;
-    licorice, Licorice
+    licorice, Licorice;
+    spacefill, SpaceFill;
 }
 
 pub(crate) trait Representation: Component + Eq + Hash + Clone + std::fmt::Debug {
-    fn spawn(
-        &self,
-        commands: &mut Commands,
-        parent: Entity,
-        children: &Children,
-        q_atoms: &Query<(&Element, &AtomPosition)>,
-        q_bonds: &Query<(&BondElements, &BondPositions)>,
-        atom_mesh: &AtomMesh,
-        meshes: &mut Assets<Mesh>,
-        element_mats: &ElementMaterials,
-    ) {
-        for &child in children.iter() {
-            if let Ok((elem, pos)) = q_atoms.get(child) {
-                self.spawn_atom(commands, parent, elem, pos, atom_mesh, element_mats)
-            }
-            if let Ok((elem, pos)) = q_bonds.get(child) {
-                self.spawn_bond(commands, parent, elem, pos, meshes, element_mats)
-            }
-        }
-    }
-
     fn spawn_atom(
         &self,
-        commands: &mut Commands,
-        parent: Entity,
-        elem: &Element,
-        pos: &AtomPosition,
-        atom_mesh: &AtomMesh,
-        element_mats: &ElementMaterials,
-    );
+        _commands: &mut Commands,
+        _parent: Entity,
+        _elem: &Element,
+        _pos: &AtomPosition,
+        _atom_mesh: &AtomMesh,
+        _element_mats: &ElementMaterials,
+    ) {
+        ()
+    }
 
     fn spawn_bond(
         &self,
-        commands: &mut Commands,
-        parent: Entity,
-        elem: &BondElements,
-        pos: &BondPositions,
-        meshes: &mut Assets<Mesh>,
-        element_mats: &ElementMaterials,
-    );
+        _commands: &mut Commands,
+        _parent: Entity,
+        _elem: (&Element, &Element),
+        _pos: (&AtomPosition, &AtomPosition),
+        _meshes: &mut Assets<Mesh>,
+        _element_mats: &ElementMaterials,
+    ) {
+        ()
+    }
+
+    fn spawn_others(
+        &self,
+        _commands: &mut Commands,
+        _parent: Entity,
+        _children: &Children,
+        _q_atoms: &Query<(&Element, &AtomPosition)>,
+        _q_bonds: &Query<&BondIndices>,
+        _atom_mesh: &AtomMesh,
+        _meshes: &mut Assets<Mesh>,
+        _element_mats: &ElementMaterials,
+    ) {
+        ()
+    }
 }
 
-#[derive(Default, Debug, Component)]
+#[derive(Debug, Component)]
 pub(crate) struct RepresentationList<R>(HashSet<R>)
 where
     R: Representation + Default;
@@ -93,27 +109,27 @@ impl<R: Representation + Default> RepresentationList<R> {
     pub fn contains(&self, value: &R) -> bool {
         self.0.contains(value)
     }
-
-    /// Add a default representation to the list
-    pub fn insert_default(&mut self) {
-        self.insert(R::default());
-    }
 }
 
 fn rep_system<R>(
     mut commands: Commands,
     q_parent: Query<(Entity, &Children, &RepresentationList<R>), Changed<RepresentationList<R>>>,
     q_atoms: Query<(&Element, &AtomPosition)>,
-    q_bonds: Query<(&BondElements, &BondPositions)>,
+    q_bonds: Query<&BondIndices>,
     q_reps: Query<(Entity, &R)>,
     atom_mesh: Res<AtomMesh>,
     mut meshes: ResMut<Assets<Mesh>>,
     element_mats: Res<ElementMaterials>,
     mut events: EventWriter<crate::camera::CamControlEvent>,
-) where
+) -> Result<()>
+where
     R: Representation + Default,
 {
     for (parent, children, reps) in q_parent.iter() {
+        wprintln!(
+            "Entity {parent:?} has changed {} representations: {reps:?}",
+            std::any::type_name::<R>()
+        );
         //TODO: Remove/amortize this allocation
         let mut existing_reps = HashSet::new();
         for &child in children.iter() {
@@ -122,13 +138,33 @@ fn rep_system<R>(
                 if reps.contains(rep) {
                     existing_reps.insert(rep.clone());
                 } else {
+                    wprintln!("Deleting rep {rep:?} from {child:?}");
                     commands.entity(child).despawn_recursive();
                 }
             }
         }
         // Add reps missing from children
         for rep in reps.0.difference(&existing_reps) {
-            rep.spawn(
+            for &child in children.iter() {
+                if let Ok(idcs) = q_bonds.get(child) {
+                    let (elem_a, pos_a) = q_atoms.get(idcs.0)?;
+                    let (elem_b, pos_b) = q_atoms.get(idcs.1)?;
+                    wprintln!("Drawing {rep:?} for bond between {elem_a} at {pos_a:?} and {elem_b} at {pos_b:?}");
+                    rep.spawn_bond(
+                        &mut commands,
+                        parent,
+                        (elem_a, elem_b),
+                        (pos_a, pos_b),
+                        &mut meshes,
+                        &element_mats,
+                    )
+                }
+                if let Ok((elem, pos)) = q_atoms.get(child) {
+                    wprintln!("Drawing {rep:?} for {elem} atom at {pos:?}");
+                    rep.spawn_atom(&mut commands, parent, elem, pos, &atom_mesh, &element_mats)
+                }
+            }
+            rep.spawn_others(
                 &mut commands,
                 parent,
                 &children,
@@ -141,6 +177,7 @@ fn rep_system<R>(
             events.send(crate::camera::CamControlEvent::ReCenter);
         }
     }
+    Ok(())
 }
 
 pub(crate) struct AtomMesh(Handle<Mesh>);

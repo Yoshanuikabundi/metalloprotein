@@ -12,9 +12,26 @@ categories = [] # Categories for discoverability. crates.io accepts a maximum of
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chemfiles = {version = "0.10.2", features = ["build-from-sources"]}
-bevy = { version = "0.6.0", features = ["dynamic"] } # Remove dynamic feature for releases
-bevy_mod_picking = "0.5.4"
-bevy_tweening = "0.3.2"
+bevy = "0.6.0"
 serde = "1.0.136"
 clap = { version = "3.1.2", features = ["derive"] }
+thiserror = "1.0"
+eyre = "0.6.1"
+pdbtbx = "0.9.0"
+
+[dev-dependencies]
+bevy = { version = "0.6.0", features = ["dynamic"] }
+
+[target.'cfg(not(target_family="wasm"))'.dependencies]
+chemfiles = {version = "0.10.2", features = ["build-from-sources"]}
+
+[target.'cfg(target_family="wasm")'.dependencies]
+web-sys = {version = "0.3", features = ["console"] }
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

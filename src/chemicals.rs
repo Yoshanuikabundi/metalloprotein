@@ -1,51 +1,111 @@
+use crate::Result;
 use bevy::prelude::*;
-use chemfiles::Frame;
+use std::collections::HashMap;
+use thiserror::Error;
 
-fn spawn_atoms(commands: &mut Commands, frame: &Frame, parent: Entity) {
+pub(crate) fn spawn_atom(
+    commands: &mut Commands,
+    parent: Entity,
+    atomic_number: i32,
+    xyz: Vec3,
+) -> Entity {
+    let child = commands
+        .spawn_bundle(AtomBundle {
+            element: Element::new(atomic_number),
+            atom_position: AtomPosition(xyz),
+            ..Default::default()
+        })
+        .id();
+
+    commands.entity(parent).push_children(&[child]);
+
+    child
+}
+
+pub(crate) fn spawn_bond(
+    commands: &mut Commands,
+    parent: Entity,
+    atom_a: Entity,
+    atom_b: Entity,
+) -> Entity {
+    let child = commands
+        .spawn_bundle(BondBundle {
+            indices: BondIndices::new(atom_a, atom_b),
+        })
+        .id();
+
+    commands.entity(parent).push_children(&[child]);
+
+    child
+}
+
+#[derive(Error, Debug)]
+pub(crate) enum SpawnStructureErr {
+    #[error("Atom index {0} in bond is not defined")]
+    UndefinedAtomInBond(i64),
+}
+
+#[cfg(not(target_family = "wasm"))]
+pub(crate) fn spawn_frame(
+    commands: &mut Commands,
+    frame: &chemfiles::Frame,
+    parent: Entity,
+) -> Result<(), SpawnStructureErr> {
+    let top = frame.topology();
+    let mut index_map: Vec<Option<Entity>> = vec![None; top.size()];
+
     for (i, &xyz) in frame.positions().iter().enumerate() {
         let atom = frame.atom(i);
-
-        let child = commands
-            .spawn_bundle(AtomBundle {
-                element: Element::new(atom.atomic_number() as i32),
-                atom_position: AtomPosition::new(xyz),
-                index: AtomIndex(i),
-                ..Default::default()
-            })
-            .id();
-
-        commands.entity(parent).push_children(&[child]);
+        let [x, y, z] = xyz;
+        index_map[i] = Some(spawn_atom(
+            commands,
+            parent,
+            atom.atomic_number() as i32,
+            Vec3::new(x as f32, y as f32, z as f32),
+        ));
     }
-}
 
-fn spawn_bonds(commands: &mut Commands, frame: &Frame, parent: Entity) {
-    let top = frame.topology();
     for [i, j] in top.bonds() {
-        let atom_a = frame.positions()[i];
-        let atom_b = frame.positions()[j];
-
-        let element_a = top.atom(i).atomic_number();
-        let element_b = top.atom(j).atomic_number();
-
-        let child = commands
-            .spawn_bundle(BondBundle {
-                elements: BondElements(
-                    Element::new(element_a as i32),
-                    Element::new(element_b as i32),
-                ),
-                indices: BondIndices::new(i, j),
-                positions: BondPositions::new(atom_a, atom_b),
-                ..Default::default()
-            })
-            .id();
-
-        commands.entity(parent).push_children(&[child]);
+        let atom_a = index_map[i].ok_or(SpawnStructureErr::UndefinedAtomInBond(i as i64))?;
+        let atom_b = index_map[j].ok_or(SpawnStructureErr::UndefinedAtomInBond(j as i64))?;
+        spawn_bond(commands, parent, atom_a, atom_b);
     }
+
+    Ok(())
 }
 
-pub(crate) fn spawn_frame(commands: &mut Commands, frame: &Frame, parent: Entity) {
-    spawn_atoms(commands, frame, parent);
-    spawn_bonds(commands, frame, parent);
+#[allow(dead_code)]
+pub(crate) fn spawn_pdb(
+    commands: &mut Commands,
+    parent: Entity,
+    pdb: pdbtbx::PDB,
+) -> Result<(), SpawnStructureErr> {
+    let mut index_map: HashMap<usize, Entity> = HashMap::with_capacity(pdb.atom_count());
+
+    for atom in pdb.atoms() {
+        let (x, y, z) = atom.pos();
+        let atomic_number = atom.atomic_number().unwrap_or(0) as i32;
+        let serial = atom.serial_number();
+
+        index_map.insert(
+            serial,
+            spawn_atom(
+                commands,
+                parent,
+                atomic_number,
+                Vec3::new(x as f32, y as f32, z as f32),
+            ),
+        );
+    }
+
+    for (atom_a, atom_b, _bondtype) in pdb.bonds() {
+        let (i, j) = (atom_a.serial_number(), atom_b.serial_number());
+        let atom_a = index_map[&i];
+        let atom_b = index_map[&j];
+        spawn_bond(commands, parent, atom_a, atom_b);
+    }
+
+    Ok(())
 }
 
 #[derive(Component, Default, Debug)]
@@ -55,15 +115,12 @@ pub(crate) struct Element {
 }
 
 #[derive(Component, Default, Debug)]
-pub(crate) struct AtomIndex(usize);
+pub(crate) struct AtomPosition(pub Vec3);
 
-#[derive(Component, Default, Debug)]
-pub(crate) struct AtomPosition(pub f32, pub f32, pub f32);
-
-impl AtomPosition {
-    fn new(xyz: [f64; 3]) -> Self {
+impl From<[f64; 3]> for AtomPosition {
+    fn from(xyz: [f64; 3]) -> Self {
         let [x, y, z] = xyz;
-        Self(x as f32, y as f32, z as f32)
+        Self(Vec3::new(x as f32, y as f32, z as f32))
     }
 }
 
@@ -73,39 +130,32 @@ impl Element {
     }
 }
 
-#[derive(Component, Default, Debug)]
-struct BondIndices(AtomIndex, AtomIndex);
+impl std::fmt::Display for Element {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self.atomic_number {
+            n @ 0..=118 => crate::elements::ELEMENTNAMES[n as usize],
+            _ => crate::elements::ELEMENTNAMES[0],
+        };
+        write!(f, "{name}",)
+    }
+}
+
+#[derive(Component, Debug)]
+pub(crate) struct BondIndices(pub Entity, pub Entity);
 
 impl BondIndices {
-    fn new(i: usize, j: usize) -> Self {
-        Self(AtomIndex(i), AtomIndex(j))
+    fn new(i: Entity, j: Entity) -> Self {
+        Self(i, j)
     }
 }
 
-#[derive(Component, Default, Debug)]
-pub(crate) struct BondPositions(pub Vec3, pub Vec3);
-
-impl BondPositions {
-    fn new(a: [f64; 3], b: [f64; 3]) -> Self {
-        let a = Vec3::new(a[0] as f32, a[1] as f32, a[2] as f32);
-        let b = Vec3::new(b[0] as f32, b[1] as f32, b[2] as f32);
-        Self(a, b)
-    }
-}
-
-#[derive(Component, Default, Debug)]
-pub(crate) struct BondElements(pub Element, pub Element);
-
-#[derive(Bundle, Default)]
+#[derive(Bundle)]
 struct BondBundle {
     indices: BondIndices,
-    positions: BondPositions,
-    elements: BondElements,
 }
 
 #[derive(Bundle, Default)]
 struct AtomBundle {
     atom_position: AtomPosition,
     element: Element,
-    index: AtomIndex,
 }

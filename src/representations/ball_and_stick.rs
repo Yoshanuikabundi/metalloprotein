@@ -1,5 +1,6 @@
-use crate::chemicals::{AtomPosition, BondElements, BondPositions, Element};
+use crate::chemicals::{AtomPosition, Element};
 use crate::representations::{AtomMesh, ElementMaterials, Representation};
+use crate::wprintln;
 use bevy::prelude::*;
 use std::hash::Hash;
 
@@ -12,7 +13,7 @@ pub struct BallAndStick {
 impl Default for BallAndStick {
     fn default() -> Self {
         Self {
-            ball_radius: 20,
+            ball_radius: 30,
             stick_radius: 10,
         }
     }
@@ -58,14 +59,13 @@ impl Representation for BallAndStick {
             n @ 0..=118 => element_mats.0[n as usize].clone(),
             _ => element_mats.0[0].clone(),
         };
-        let &AtomPosition(x, y, z) = pos;
 
         commands.entity(parent).with_children(|parent| {
             parent
                 .spawn_bundle(PbrBundle {
                     material,
                     mesh,
-                    transform: Transform::from_xyz(x, y, z)
+                    transform: Transform::from_translation(pos.0)
                         .with_scale(Vec3::splat(self.ball_radius())),
                     ..Default::default()
                 })
@@ -77,11 +77,12 @@ impl Representation for BallAndStick {
         &self,
         commands: &mut Commands,
         parent: Entity,
-        elem: &BondElements,
-        pos: &BondPositions,
+        elem: (&Element, &Element),
+        pos: (&AtomPosition, &AtomPosition),
         meshes: &mut Assets<Mesh>,
         element_mats: &ElementMaterials,
     ) {
+        // Construct the materials for each half of the bond
         let material_a = match elem.0.atomic_number {
             n @ 0..=118 => element_mats.0[n as usize].clone(),
             _ => element_mats.0[0].clone(),
@@ -92,39 +93,26 @@ impl Representation for BallAndStick {
             _ => element_mats.0[0].clone(),
         };
 
-        let &BondPositions(a, b) = pos;
-
-        let [x_a, y_a, z_a] = a.to_array();
-        let [x_b, y_b, z_b] = b.to_array();
+        let xyz_a = pos.0 .0;
+        let xyz_b = pos.1 .0;
 
         let radius = self.stick_radius();
-        let depth = (a - b).length() / 2.0;
+        let depth = (xyz_a - xyz_b).length() / 2.0;
 
+        // Construct the mesh for the half-bond
         let mesh = meshes.add(Mesh::from(shape::Capsule {
             depth,
             radius,
             ..Default::default()
         }));
 
-        let transform_a = Transform::from_xyz(
-            (3.0 * x_a + x_b) / 4.0,
-            (3.0 * y_a + y_b) / 4.0,
-            (3.0 * z_a + z_b) / 4.0,
-        )
-        .with_rotation(Quat::from_rotation_arc_colinear(
-            Vec3::Y,
-            (a - b).normalize(),
-        ));
-
-        let transform_b = Transform::from_xyz(
-            (x_a + 3.0 * x_b) / 4.0,
-            (y_a + 3.0 * y_b) / 4.0,
-            (z_a + 3.0 * z_b) / 4.0,
-        )
-        .with_rotation(Quat::from_rotation_arc_colinear(
-            Vec3::Y,
-            (a - b).normalize(),
-        ));
+        // Place the two half bonds in the right spot and rotation
+        let transform_a = Transform::from_translation((3.0 * xyz_a + xyz_b) / 4.0).with_rotation(
+            Quat::from_rotation_arc_colinear(Vec3::Y, (xyz_a - xyz_b).normalize()),
+        );
+        let transform_b = Transform::from_translation((xyz_a + 3.0 * xyz_b) / 4.0).with_rotation(
+            Quat::from_rotation_arc_colinear(Vec3::Y, (xyz_a - xyz_b).normalize()),
+        );
 
         commands.entity(parent).with_children(|parent| {
             parent
