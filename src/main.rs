@@ -2,7 +2,6 @@
 
 use bevy::app::AppExit;
 use bevy::prelude::*;
-use clap::Parser;
 use eyre::Report;
 use std::path::{Path, PathBuf};
 
@@ -25,6 +24,7 @@ fn main() {
         .insert_resource(ClearColor(Color::rgb(1.0, 1.0, 1.0)))
         .add_plugins(DefaultPlugins)
         .add_plugin(MetalloproteinCameraPlugin)
+        .add_event::<LoadFile>()
         .init_resource::<ElementMaterials>()
         .add_startup_system(setup)
         .add_system(read_file.chain(error_handler).before("representations"))
@@ -40,8 +40,8 @@ fn error_handler(In(result): In<Result<()>>, mut exit: EventWriter<AppExit>) {
     }
 }
 
-/// Simple program to greet a person
-#[derive(Parser, Debug)]
+#[cfg(not(target_family = "wasm"))]
+#[derive(clap::Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
     /// Path to chemical structure file
@@ -59,7 +59,11 @@ macro_rules! wprintln {
     };
 }
 
-fn setup(mut commands: Commands) {
+struct LoadFile {
+    path: PathBuf,
+}
+
+fn setup(mut commands: Commands, mut ev_loadfile: EventWriter<LoadFile>) {
     // light
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
@@ -80,21 +84,19 @@ fn setup(mut commands: Commands) {
         ..Default::default()
     });
 
-    let args = Args::parse();
-    if let Some(path) = &args.structure {
-        commands.spawn_bundle((
-            StructureFile::from(path),
-            Transform::default(),
-            GlobalTransform::default(),
-            Visibility::default(),
-            ComputedVisibility::default(),
-        ));
-    };
+    #[cfg(not(target_family = "wasm"))]
+    {
+        use clap::Parser;
+        let args = Args::parse();
+        if let Some(path) = args.structure {
+            ev_loadfile.send(LoadFile { path });
+        };
+    }
 
     wprintln!("Hello, world! This is metalloprotein.");
     #[cfg(target_family = "wasm")]
     {
-        wprintln!("Spawning a helium atom/molecule");
+        wprintln!("Spawning a hydrogen molecule");
         let parent = commands
             .spawn_bundle((
                 Transform::default(),
@@ -133,49 +135,46 @@ where
     }
 }
 
-#[cfg(not(target_family = "wasm"))]
-fn read_file(
-    mut commands: Commands,
-    query: Query<(Entity, &StructureFile), Added<StructureFile>>,
-) -> Result<()> {
-    for (entity, file) in query.iter() {
-        let StructureFile(path) = file;
-        let mut trajectory = chemfiles::Trajectory::open(path, 'r')?;
-        let mut frame = chemfiles::Frame::new();
+fn read_file(mut commands: Commands, mut ev_loadfile: EventReader<LoadFile>) -> Result<()> {
+    for LoadFile { path } in ev_loadfile.iter() {
+        let entity = commands
+            .spawn_bundle((
+                StructureFile::from(path),
+                Transform::default(),
+                GlobalTransform::default(),
+                Visibility::default(),
+                ComputedVisibility::default(),
+            ))
+            .id();
 
-        trajectory.read(&mut frame)?;
+        #[cfg(target_family = "wasm")]
+        {
+            wprintln!("Opening PDB {path:?}!");
 
-        chemicals::spawn_frame(&mut commands, &frame, entity)?;
+            let (pdb, _errors) = pdbtbx::open(
+                path.to_str().ok_or(Report::msg("Path not valid unicode"))?,
+                pdbtbx::StrictnessLevel::Loose,
+            )
+            .map_err(|v| v.first().cloned().unwrap())?;
 
-        wprintln!("Frame spawned!");
+            wprintln!("PDB opened!");
 
-        commands
-            .entity(entity)
-            .insert_bundle(RepresentableBundle::default());
-    }
-    Ok(())
-}
+            chemicals::spawn_pdb(&mut commands, entity, pdb)?;
 
-#[cfg(target_family = "wasm")]
-fn read_file(
-    mut commands: Commands,
-    query: Query<(Entity, &StructureFile), Added<StructureFile>>,
-) -> Result<()> {
-    for (entity, file) in query.iter() {
-        let StructureFile(path) = file;
-        wprintln!("Opening PDB {path:?}!");
+            wprintln!("PDB spawned!");
+        }
 
-        let (pdb, _errors) = pdbtbx::open(
-            path.to_str().ok_or(Report::msg("Path not valid unicode"))?,
-            pdbtbx::StrictnessLevel::Loose,
-        )
-        .map_err(|v| v.first().cloned().unwrap())?;
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let mut trajectory = chemfiles::Trajectory::open(path, 'r')?;
+            let mut frame = chemfiles::Frame::new();
 
-        wprintln!("PDB opened!");
+            trajectory.read(&mut frame)?;
 
-        chemicals::spawn_pdb(&mut commands, entity, pdb)?;
+            chemicals::spawn_frame(&mut commands, &frame, entity)?;
 
-        wprintln!("PDB spawned!");
+            wprintln!("Frame spawned!");
+        }
 
         commands
             .entity(entity)
