@@ -1,9 +1,7 @@
-use crate::Result;
-use bevy::prelude::*;
-use std::collections::HashMap;
+use crate::prelude::*;
 use thiserror::Error;
 
-pub(crate) fn spawn_atom(
+pub fn spawn_atom(
     commands: &mut Commands,
     parent: Entity,
     atomic_number: i32,
@@ -22,7 +20,7 @@ pub(crate) fn spawn_atom(
     child
 }
 
-pub(crate) fn spawn_bond(
+pub fn spawn_bond(
     commands: &mut Commands,
     parent: Entity,
     atom_a: Entity,
@@ -40,13 +38,13 @@ pub(crate) fn spawn_bond(
 }
 
 #[derive(Error, Debug)]
-pub(crate) enum SpawnStructureErr {
+pub enum SpawnStructureErr {
     #[error("Atom index {0} in bond is not defined")]
     UndefinedAtomInBond(i64),
 }
 
-#[cfg(not(target_family = "wasm"))]
-pub(crate) fn spawn_frame(
+#[cfg(not(target_arch = "wasm32"))]
+pub fn spawn_frame(
     commands: &mut Commands,
     frame: &chemfiles::Frame,
     parent: Entity,
@@ -74,48 +72,14 @@ pub(crate) fn spawn_frame(
     Ok(())
 }
 
-#[allow(dead_code)]
-pub(crate) fn spawn_pdb(
-    commands: &mut Commands,
-    parent: Entity,
-    pdb: pdbtbx::PDB,
-) -> Result<(), SpawnStructureErr> {
-    let mut index_map: HashMap<usize, Entity> = HashMap::with_capacity(pdb.atom_count());
-
-    for atom in pdb.atoms() {
-        let (x, y, z) = atom.pos();
-        let atomic_number = atom.atomic_number().unwrap_or(0) as i32;
-        let serial = atom.serial_number();
-
-        index_map.insert(
-            serial,
-            spawn_atom(
-                commands,
-                parent,
-                atomic_number,
-                Vec3::new(x as f32, y as f32, z as f32),
-            ),
-        );
-    }
-
-    for (atom_a, atom_b, _bondtype) in pdb.bonds() {
-        let (i, j) = (atom_a.serial_number(), atom_b.serial_number());
-        let atom_a = index_map[&i];
-        let atom_b = index_map[&j];
-        spawn_bond(commands, parent, atom_a, atom_b);
-    }
-
-    Ok(())
-}
-
 #[derive(Component, Default, Debug)]
 /// Entities with this component are atoms
-pub(crate) struct Element {
-    pub(crate) atomic_number: i32,
+pub struct Element {
+    pub atomic_number: i32,
 }
 
 #[derive(Component, Default, Debug)]
-pub(crate) struct AtomPosition(pub Vec3);
+pub struct AtomPosition(pub Vec3);
 
 impl From<[f64; 3]> for AtomPosition {
     fn from(xyz: [f64; 3]) -> Self {
@@ -141,7 +105,7 @@ impl std::fmt::Display for Element {
 }
 
 #[derive(Component, Debug)]
-pub(crate) struct BondIndices(pub Entity, pub Entity);
+pub struct BondIndices(pub Entity, pub Entity);
 
 impl BondIndices {
     fn new(i: Entity, j: Entity) -> Self {

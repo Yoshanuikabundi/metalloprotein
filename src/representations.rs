@@ -1,7 +1,7 @@
 use crate::chemicals::{AtomPosition, BondIndices, Element};
+use crate::error_handler;
+use crate::prelude::*;
 use crate::ElementMaterials;
-use crate::{error_handler, wprintln, Result};
-use bevy::prelude::*;
 use std::collections::HashSet;
 use std::hash::Hash;
 
@@ -15,6 +15,50 @@ macro_rules! representations {
         )*
 
         pub type DefaultRepresentation = $default_struc;
+
+        pub type BorrowAllRepListsTuple<'a> = (
+            &'a RepresentationList<$default_struc>,
+            $(&'a RepresentationList<$struc>),*
+        );
+
+        pub type BorrowAllRepListsTupleWithEntity<'a> = (
+            Entity,
+            &'a RepresentationList<$default_struc>,
+            $(&'a RepresentationList<$struc>),*
+        );
+
+        pub struct BorrowAllRepLists<'a>(
+            &'a RepresentationList<$default_struc>,
+            $(&'a RepresentationList<$struc>),*
+        );
+
+        impl<'a> BorrowAllRepLists<'a> {
+            pub fn for_each_iter<F>(&self, mut f: F)  where F: FnMut(&mut dyn Iterator<Item=&dyn std::fmt::Debug>) -> (){
+                let Self($default_mod, $($mod),*) = self;
+                f(&mut $default_mod.iter().map(|v| {
+                    let v: &dyn std::fmt::Debug = &*v;
+                    v
+                }));
+                $(f(&mut $mod.iter().map(|v| {
+                    let v: &dyn std::fmt::Debug = &*v;
+                    v
+                })));*
+            }
+        }
+
+        impl<'a> From<BorrowAllRepListsTuple<'a>> for BorrowAllRepLists<'a> {
+            fn from(tuple: BorrowAllRepListsTuple<'a>) -> Self {
+                let ($default_mod, $($mod),*) = tuple;
+                Self($default_mod, $($mod),*)
+            }
+        }
+
+        impl<'a> From<BorrowAllRepListsTupleWithEntity<'a>> for BorrowAllRepLists<'a> {
+            fn from(tuple: BorrowAllRepListsTupleWithEntity<'a>) -> Self {
+                let (_, $default_mod, $($mod),*) = tuple;
+                Self($default_mod, $($mod),*)
+            }
+        }
 
         impl Default for RepresentationList<DefaultRepresentation> {
             fn default() -> Self {
@@ -32,12 +76,12 @@ macro_rules! representations {
         ///
         /// Contains `RepresentationList`s for all representations
         #[derive(Bundle, Default)]
-        pub(crate) struct RepresentableBundle {
+        pub struct RepresentableBundle {
             $default_mod: RepresentationList<$default_struc>,
             $($mod: RepresentationList<$struc>),*
         }
 
-        pub(crate) struct RepresentationPlugin;
+        pub struct RepresentationPlugin;
 
         impl Plugin for RepresentationPlugin {
             fn build(&self, app: &mut App) {
@@ -56,7 +100,7 @@ representations! {
     spacefill, SpaceFill;
 }
 
-pub(crate) trait Representation: Component + Eq + Hash + Clone + std::fmt::Debug {
+pub trait Representation: Component + Eq + Hash + Clone + std::fmt::Debug {
     fn spawn_atom(
         &self,
         _commands: &mut Commands,
@@ -97,7 +141,7 @@ pub(crate) trait Representation: Component + Eq + Hash + Clone + std::fmt::Debug
 }
 
 #[derive(Debug, Component)]
-pub(crate) struct RepresentationList<R>(HashSet<R>)
+pub struct RepresentationList<R>(HashSet<R>)
 where
     R: Representation + Default;
 
@@ -108,6 +152,30 @@ impl<R: Representation + Default> RepresentationList<R> {
 
     pub fn contains(&self, value: &R) -> bool {
         self.0.contains(value)
+    }
+
+    pub fn iter(&self) -> <&HashSet<R> as IntoIterator>::IntoIter {
+        (&self).into_iter()
+    }
+}
+
+impl<R: Representation + Default> IntoIterator for RepresentationList<R> {
+    type Item = R;
+
+    type IntoIter = <HashSet<R> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a, R: Representation + Default> IntoIterator for &'a RepresentationList<R> {
+    type Item = &'a R;
+
+    type IntoIter = <&'a HashSet<R> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&self.0).into_iter()
     }
 }
 
@@ -126,10 +194,10 @@ where
     R: Representation + Default,
 {
     for (parent, children, reps) in q_parent.iter() {
-        wprintln!(
-            "Entity {parent:?} has changed {} representations: {reps:?}",
-            std::any::type_name::<R>()
-        );
+        // wprintln!(
+        //     "Entity {parent:?} has changed {} representations: {reps:?}",
+        //     std::any::type_name::<R>()
+        // );
         //TODO: Remove/amortize this allocation
         let mut existing_reps = HashSet::new();
         for &child in children.iter() {
@@ -138,7 +206,7 @@ where
                 if reps.contains(rep) {
                     existing_reps.insert(rep.clone());
                 } else {
-                    wprintln!("Deleting rep {rep:?} from {child:?}");
+                    // wprintln!("Deleting rep {rep:?} from {child:?}");
                     commands.entity(child).despawn_recursive();
                 }
             }
@@ -149,7 +217,7 @@ where
                 if let Ok(idcs) = q_bonds.get(child) {
                     let (elem_a, pos_a) = q_atoms.get(idcs.0)?;
                     let (elem_b, pos_b) = q_atoms.get(idcs.1)?;
-                    wprintln!("Drawing {rep:?} for bond between {elem_a} at {pos_a:?} and {elem_b} at {pos_b:?}");
+                    // wprintln!("Drawing {rep:?} for bond between {elem_a} at {pos_a:?} and {elem_b} at {pos_b:?}");
                     rep.spawn_bond(
                         &mut commands,
                         parent,
@@ -160,7 +228,7 @@ where
                     )
                 }
                 if let Ok((elem, pos)) = q_atoms.get(child) {
-                    wprintln!("Drawing {rep:?} for {elem} atom at {pos:?}");
+                    // wprintln!("Drawing {rep:?} for {elem} atom at {pos:?}");
                     rep.spawn_atom(&mut commands, parent, elem, pos, &atom_mesh, &element_mats)
                 }
             }
@@ -180,7 +248,7 @@ where
     Ok(())
 }
 
-pub(crate) struct AtomMesh(Handle<Mesh>);
+pub struct AtomMesh(Handle<Mesh>);
 
 impl FromWorld for AtomMesh {
     fn from_world(world: &mut World) -> Self {

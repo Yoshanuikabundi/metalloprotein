@@ -1,6 +1,6 @@
-use bevy::prelude::*;
+use crate::prelude::*;
 
-pub(crate) struct ElementMaterials(pub(crate) [Handle<StandardMaterial>; 119]);
+pub struct ElementMaterials(pub [Handle<StandardMaterial>; 119]);
 
 impl FromWorld for ElementMaterials {
     fn from_world(world: &mut World) -> Self {
@@ -138,7 +138,7 @@ static ELEMENTCOLOURS: [Color; 119] = [
 /// Manjeera Mantina, Adam C. Chamberlin, Rosendo Valero, Christopher J. Cramer, and Donald G. Truhlar
 /// The Journal of Physical Chemistry A 2009 113 (19), 5806-5812
 /// DOI: [10.1021/jp8111556](https://doi.org/10.1021/jp8111556)
-pub(crate) static ELEMENTRADII: [f32; 119] = [
+pub static ELEMENTRADII: [f32; 119] = [
     1.0,  // Virtual sites/dummy atoms
     1.10, // Hydrogen,H,1
     1.40, // Helium,He,2
@@ -260,7 +260,7 @@ pub(crate) static ELEMENTRADII: [f32; 119] = [
     1.0,  // Oganesson,Og,118
 ];
 
-pub(crate) static ELEMENTNAMES: [&'static str; 119] = [
+pub static ELEMENTNAMES: [&'static str; 119] = [
     "VirtualSite",
     "Hydrogen",
     "Helium",

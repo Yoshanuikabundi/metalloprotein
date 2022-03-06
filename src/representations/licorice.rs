@@ -1,7 +1,7 @@
 use super::ball_and_stick::BallAndStick;
 use crate::chemicals::{AtomPosition, Element};
+use crate::prelude::*;
 use crate::representations::{ElementMaterials, Representation};
-use bevy::prelude::*;
 
 #[derive(Component, PartialEq, Eq, Debug, Hash, Clone)]
 pub struct Licorice(BallAndStick);

@@ -1,7 +1,6 @@
 use crate::chemicals::{AtomPosition, Element};
+use crate::prelude::*;
 use crate::representations::{AtomMesh, ElementMaterials, Representation};
-use crate::wprintln;
-use bevy::prelude::*;
 use std::hash::Hash;
 
 #[derive(Component, PartialEq, Eq, Debug, Hash, Clone)]

@@ -1,6 +1,5 @@
-use crate::wprintln;
+use crate::prelude::*;
 use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
-use bevy::prelude::*;
 use std::cmp::max_by;
 use std::cmp::Ordering;
 use std::f32::consts::PI;
@@ -122,7 +121,7 @@ fn camera_control(
         let mut any = false;
         for event in events.iter() {
             any = true;
-            wprintln!("Processing {event:?}");
+            // wprintln!("Processing {event:?}");
             match *event {
                 CamControlEvent::Orbit(delta) => {
                     let yaw = Quat::from_rotation_y(-delta.x);

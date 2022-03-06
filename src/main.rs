@@ -1,8 +1,6 @@
 #![doc = include_str!("../README.md")]
 
 use bevy::app::AppExit;
-use bevy::prelude::*;
-use eyre::Report;
 use std::path::{Path, PathBuf};
 
 pub mod camera;
@@ -13,10 +11,20 @@ use elements::ElementMaterials;
 
 pub mod chemicals;
 
+pub mod gui;
+use gui::MetalloproteinGuiPlugin;
+
 pub mod representations;
 use representations::{RepresentableBundle, RepresentationPlugin};
 
-type Result<T, E = Report> = std::result::Result<T, E>;
+pub mod prelude {
+    pub use crate::wprintln;
+    pub use bevy::prelude::*;
+    pub use eyre::Report;
+
+    pub type Result<T, E = Report> = std::result::Result<T, E>;
+}
+use crate::prelude::*;
 
 fn main() {
     App::new()
@@ -24,6 +32,7 @@ fn main() {
         .insert_resource(ClearColor(Color::rgb(1.0, 1.0, 1.0)))
         .add_plugins(DefaultPlugins)
         .add_plugin(MetalloproteinCameraPlugin)
+        .add_plugin(MetalloproteinGuiPlugin)
         .add_event::<LoadFile>()
         .init_resource::<ElementMaterials>()
         .add_startup_system(setup)
@@ -40,7 +49,17 @@ fn error_handler(In(result): In<Result<()>>, mut exit: EventWriter<AppExit>) {
     }
 }
 
-#[cfg(not(target_family = "wasm"))]
+#[macro_export]
+macro_rules! wprintln {
+    ($($args:expr),+) => {
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(&format!($($args),+).into());
+        #[cfg(not(target_arch = "wasm32"))]
+        println!($($args),+);
+    };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(clap::Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
@@ -49,21 +68,15 @@ struct Args {
     structure: Option<PathBuf>,
 }
 
-#[macro_export]
-macro_rules! wprintln {
-    ($($args:expr),+) => {
-        #[cfg(target_family = "wasm")]
-        web_sys::console::log_1(&format!($($args),+).into());
-        #[cfg(not(target_family = "wasm"))]
-        println!($($args),+);
-    };
-}
-
 struct LoadFile {
     path: PathBuf,
 }
 
 fn setup(mut commands: Commands, mut ev_loadfile: EventWriter<LoadFile>) {
+    // When building for WASM, print panics to the browser console
+    #[cfg(target_arch = "wasm32")]
+    console_error_panic_hook::set_once();
+
     // light
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
@@ -84,7 +97,7 @@ fn setup(mut commands: Commands, mut ev_loadfile: EventWriter<LoadFile>) {
         ..Default::default()
     });
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(not(target_arch = "wasm32"))]
     {
         use clap::Parser;
         let args = Args::parse();
@@ -93,10 +106,10 @@ fn setup(mut commands: Commands, mut ev_loadfile: EventWriter<LoadFile>) {
         };
     }
 
-    wprintln!("Hello, world! This is metalloprotein.");
-    #[cfg(target_family = "wasm")]
+    // wprintln!("Hello, world! This is metalloprotein.");
+    #[cfg(target_arch = "wasm32")]
     {
-        wprintln!("Spawning a hydrogen molecule");
+        // wprintln!("Spawning a hydrogen molecule");
         let parent = commands
             .spawn_bundle((
                 Transform::default(),
@@ -109,7 +122,7 @@ fn setup(mut commands: Commands, mut ev_loadfile: EventWriter<LoadFile>) {
         let atom_a = chemicals::spawn_atom(&mut commands, parent, 1, Vec3::new(2.0, 2.0, 0.0));
         let atom_b = chemicals::spawn_atom(&mut commands, parent, 1, Vec3::new(3.0, 2.0, 0.0));
         chemicals::spawn_bond(&mut commands, parent, atom_a, atom_b);
-        wprintln!("Spawned!");
+        // wprintln!("Spawned!");
     }
 }
 
@@ -123,7 +136,7 @@ fn animate_light_direction(
     // wprintln!("tick");
 }
 
-#[derive(Default, Component)]
+#[derive(Default, Component, Debug)]
 struct StructureFile(PathBuf);
 
 impl<T> From<T> for StructureFile
@@ -147,24 +160,7 @@ fn read_file(mut commands: Commands, mut ev_loadfile: EventReader<LoadFile>) -> 
             ))
             .id();
 
-        #[cfg(target_family = "wasm")]
-        {
-            wprintln!("Opening PDB {path:?}!");
-
-            let (pdb, _errors) = pdbtbx::open(
-                path.to_str().ok_or(Report::msg("Path not valid unicode"))?,
-                pdbtbx::StrictnessLevel::Loose,
-            )
-            .map_err(|v| v.first().cloned().unwrap())?;
-
-            wprintln!("PDB opened!");
-
-            chemicals::spawn_pdb(&mut commands, entity, pdb)?;
-
-            wprintln!("PDB spawned!");
-        }
-
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(not(target_arch = "wasm32"))]
         {
             let mut trajectory = chemfiles::Trajectory::open(path, 'r')?;
             let mut frame = chemfiles::Frame::new();
@@ -173,7 +169,7 @@ fn read_file(mut commands: Commands, mut ev_loadfile: EventReader<LoadFile>) -> 
 
             chemicals::spawn_frame(&mut commands, &frame, entity)?;
 
-            wprintln!("Frame spawned!");
+            // wprintln!("Frame spawned!");
         }
 
         commands
