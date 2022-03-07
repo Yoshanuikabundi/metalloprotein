@@ -60,15 +60,13 @@ impl Representation for BallAndStick {
         };
 
         commands.entity(parent).with_children(|parent| {
-            parent
-                .spawn_bundle(PbrBundle {
-                    material,
-                    mesh,
-                    transform: Transform::from_translation(pos.0)
-                        .with_scale(Vec3::splat(self.ball_radius())),
-                    ..Default::default()
-                })
-                .insert(self.clone());
+            parent.spawn_bundle(PbrBundle {
+                material,
+                mesh,
+                transform: Transform::from_translation(pos.0)
+                    .with_scale(Vec3::splat(self.ball_radius())),
+                ..Default::default()
+            });
         });
     }
 
@@ -114,22 +112,18 @@ impl Representation for BallAndStick {
         );
 
         commands.entity(parent).with_children(|parent| {
-            parent
-                .spawn_bundle(PbrBundle {
-                    material: material_a,
-                    mesh: mesh.clone(),
-                    transform: transform_a,
-                    ..Default::default()
-                })
-                .insert(self.clone());
-            parent
-                .spawn_bundle(PbrBundle {
-                    material: material_b,
-                    mesh,
-                    transform: transform_b,
-                    ..Default::default()
-                })
-                .insert(self.clone());
+            parent.spawn_bundle(PbrBundle {
+                material: material_a,
+                mesh: mesh.clone(),
+                transform: transform_a,
+                ..Default::default()
+            });
+            parent.spawn_bundle(PbrBundle {
+                material: material_b,
+                mesh,
+                transform: transform_b,
+                ..Default::default()
+            });
         });
     }
 }

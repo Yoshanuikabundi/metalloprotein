@@ -24,14 +24,12 @@ impl Representation for SpaceFill {
         };
 
         commands.entity(parent).with_children(|parent| {
-            parent
-                .spawn_bundle(PbrBundle {
-                    material,
-                    mesh,
-                    transform: Transform::from_translation(pos.0).with_scale(Vec3::splat(scale)),
-                    ..Default::default()
-                })
-                .insert(self.clone());
+            parent.spawn_bundle(PbrBundle {
+                material,
+                mesh,
+                transform: Transform::from_translation(pos.0).with_scale(Vec3::splat(scale)),
+                ..Default::default()
+            });
         });
     }
 }

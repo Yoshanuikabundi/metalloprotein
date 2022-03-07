@@ -1,106 +1,156 @@
+//! Represent chemicals as 3D models
+//!
+//! A representation is a type that implements the [`Representation`] trait.
+//! This trait prescribes methods that construct a representation's 3D model. A
+//! representation is (a) a child of a structure entity with (b) a component that
+//! implements Representation. Typically, this looks something like the
+//! following:
+//!
+//!                        Structure entity
+//!                               |
+//!           ----------------------------------------
+//!           |             |             |          |
+//!     Representable    Children    Transform   Visibility
+//!                         |
+//!                 --------------------------------------------------...
+//!                 |             |             |                |
+//!           AtomPosition  AtomPosition  AtomPosition  Representation entity
+//!                                                              |
+//!                                    ------------------------------------
+//!                                    |                |        |        |
+//!                          impl Representation    Children   Transform  Visibility
+//!                                                     |
+//!                                              ---------------
+//!                                              |       |     |
+//!                                         Transform  Mesh  Visibility
+//!
+//! Representations are responsible for spawning in any meshes or materials that
+//! they require. Entities added by representations should be children of the
+//! Representation entity so that they can respond to changes in the parent's
+//! Transform and Visibility components, and so that they can be cleaned up.
+//!
+//! The various systems in this module are responsible for keeping track of
+//! which atoms and bonds are visible in each representation, and for cleaning
+//! up the representation when the component is removed. They do this by
+//! calling the [`Representation::spawn_bond`], [`Representation::spawn_atom`],
+//! and [`Representation::spawn_others`] methods when a representation is added
+//! or its atoms are updated.
+
 use crate::chemicals::{AtomPosition, BondIndices, Element};
 use crate::error_handler;
 use crate::prelude::*;
 use crate::ElementMaterials;
-use std::collections::HashSet;
-use std::hash::Hash;
 
 macro_rules! representations {
-    ($default_mod:ident, $default_struc:ident; $($mod:ident, $struc:ident);*;) => {
-        pub mod $default_mod;
-        pub use $default_mod::$default_struc;
+    (@default $default_mod:ident, $default_struc:ident; $($mod:ident, $struc:ident);*;) => {
+        /// The representation created when a new structure is spawned
+        pub type DefaultRepresentation = $default_struc;
+
+        #[derive(Debug, Bundle, Default)]
+        pub struct DefaultRepresentationBundle{
+            transform: Transform,
+            global_transform: GlobalTransform,
+            computed_visibility: ComputedVisibility,
+            visibility: Visibility,
+            $default_mod: $default_struc,
+        }
+
+        representations! {$default_mod, $default_struc; $($mod, $struc);*;}
+    };
+
+    ($($mod:ident, $struc:ident);*;) => {
         $(
             pub mod $mod;
             pub use $mod::$struc;
         )*
 
-        pub type DefaultRepresentation = $default_struc;
-
-        pub type BorrowAllRepListsTuple<'a> = (
-            &'a RepresentationList<$default_struc>,
-            $(&'a RepresentationList<$struc>),*
-        );
-
-        pub type BorrowAllRepListsTupleWithEntity<'a> = (
-            Entity,
-            &'a RepresentationList<$default_struc>,
-            $(&'a RepresentationList<$struc>),*
-        );
-
-        pub struct BorrowAllRepLists<'a>(
-            &'a RepresentationList<$default_struc>,
-            $(&'a RepresentationList<$struc>),*
-        );
-
-        impl<'a> BorrowAllRepLists<'a> {
-            pub fn for_each_iter<F>(&self, mut f: F)  where F: FnMut(&mut dyn Iterator<Item=&dyn std::fmt::Debug>) -> (){
-                let Self($default_mod, $($mod),*) = self;
-                f(&mut $default_mod.iter().map(|v| {
-                    let v: &dyn std::fmt::Debug = &*v;
-                    v
-                }));
-                $(f(&mut $mod.iter().map(|v| {
-                    let v: &dyn std::fmt::Debug = &*v;
-                    v
-                })));*
-            }
-        }
-
-        impl<'a> From<BorrowAllRepListsTuple<'a>> for BorrowAllRepLists<'a> {
-            fn from(tuple: BorrowAllRepListsTuple<'a>) -> Self {
-                let ($default_mod, $($mod),*) = tuple;
-                Self($default_mod, $($mod),*)
-            }
-        }
-
-        impl<'a> From<BorrowAllRepListsTupleWithEntity<'a>> for BorrowAllRepLists<'a> {
-            fn from(tuple: BorrowAllRepListsTupleWithEntity<'a>) -> Self {
-                let (_, $default_mod, $($mod),*) = tuple;
-                Self($default_mod, $($mod),*)
-            }
-        }
-
-        impl Default for RepresentationList<DefaultRepresentation> {
-            fn default() -> Self {
-                Self(HashSet::from([DefaultRepresentation::default()]))
-            }
-        }
-
-        $(impl Default for RepresentationList<$struc> {
-            fn default() -> Self {
-                Self(HashSet::default())
-            }
-        })*
-
-        /// Bundle for entities that can be represented
+        /// Helper type for creating queries for entities that have any representation
         ///
-        /// Contains `RepresentationList`s for all representations
-        #[derive(Bundle, Default)]
-        pub struct RepresentableBundle {
-            $default_mod: RepresentationList<$default_struc>,
-            $($mod: RepresentationList<$struc>),*
+        /// Creating systems that are generic over representations is preferred,
+        /// but sometimes this is imposssible.
+        pub type QueryAnyRep<'w, 's, 'c> = Query<'w, 's, (Entity, $(Option<&'c $struc>),*), Or<($(With<$struc>),*)>>;
+
+        /// Convenience type for working with multiple representations in one system
+        ///
+        /// Creating systems that are generic over representations is preferred,
+        /// but sometimes this is imposssible.
+        #[derive(Debug)]
+        pub enum RepresentationEnum<'a> {
+            $($struc(&'a $struc)),*,
         }
 
+        $(
+            impl<'a> From<&'a $struc> for RepresentationEnum<'a> {
+                fn from(rep: &'a $struc) -> Self {
+                    RepresentationEnum::$struc(rep)
+                }
+            }
+        )*
+
+        pub struct RepIter<'a> {
+            leftovers: ($(Option<&'a $struc>),*),
+            entity: Entity,
+        }
+
+        impl<'a> From<(Entity, $(Option<&'a $struc>),*)> for RepIter<'a> {
+            fn from(tuple: (Entity, $(Option<&'a $struc>),*)) -> Self {
+                let (entity, $($mod),*) = tuple;
+                Self {
+                    leftovers: ($($mod),*),
+                    entity,
+                }
+            }
+        }
+
+        impl<'a> Iterator for RepIter<'a> {
+            type Item = (Entity, RepresentationEnum<'a>);
+
+            fn next(&mut self) -> Option<Self::Item> {
+                let ($(ref mut $mod),*) = &mut self.leftovers;
+
+                $(
+                    if let Some($mod) = $mod.take() {
+                        return Some((self.entity, $mod.into()));
+                    }
+                )*
+
+                None
+            }
+        }
+
+        /// Plugin for chemical representations
         pub struct RepresentationPlugin;
 
         impl Plugin for RepresentationPlugin {
             fn build(&self, app: &mut App) {
                 app
                     .init_resource::<AtomMesh>()
-                    .add_system(rep_system::<$default_struc>.chain(error_handler).label("representations"))
-                    $(.add_system(rep_system::<$struc>.chain(error_handler).label("representations")))*;
+                    $(.add_system(spawn_reps::<$struc>.chain(error_handler).label("representations")))*
+                    ;
             }
         }
     };
 }
 
 representations! {
+    @default licorice, Licorice;
     ball_and_stick, BallAndStick;
-    licorice, Licorice;
     spacefill, SpaceFill;
 }
 
-pub trait Representation: Component + Eq + Hash + Clone + std::fmt::Debug {
+#[derive(Debug, Component, Default)]
+pub struct Representable;
+
+#[derive(Debug, Bundle, Default)]
+pub struct RepresentableBundle {
+    transform: Transform,
+    global_transform: GlobalTransform,
+    computed_visibility: ComputedVisibility,
+    visibility: Visibility,
+    representable: Representable,
+}
+
+pub trait Representation: Component + Default {
     fn spawn_atom(
         &self,
         _commands: &mut Commands,
@@ -129,7 +179,7 @@ pub trait Representation: Component + Eq + Hash + Clone + std::fmt::Debug {
         &self,
         _commands: &mut Commands,
         _parent: Entity,
-        _children: &Children,
+        _siblings: &Children,
         _q_atoms: &Query<(&Element, &AtomPosition)>,
         _q_bonds: &Query<&BondIndices>,
         _atom_mesh: &AtomMesh,
@@ -140,111 +190,64 @@ pub trait Representation: Component + Eq + Hash + Clone + std::fmt::Debug {
     }
 }
 
-#[derive(Debug, Component)]
-pub struct RepresentationList<R>(HashSet<R>)
-where
-    R: Representation + Default;
-
-impl<R: Representation + Default> RepresentationList<R> {
-    pub fn insert(&mut self, value: R) -> bool {
-        self.0.insert(value)
-    }
-
-    pub fn contains(&self, value: &R) -> bool {
-        self.0.contains(value)
-    }
-
-    pub fn iter(&self) -> <&HashSet<R> as IntoIterator>::IntoIter {
-        (&self).into_iter()
-    }
-}
-
-impl<R: Representation + Default> IntoIterator for RepresentationList<R> {
-    type Item = R;
-
-    type IntoIter = <HashSet<R> as IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl<'a, R: Representation + Default> IntoIterator for &'a RepresentationList<R> {
-    type Item = &'a R;
-
-    type IntoIter = <&'a HashSet<R> as IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        (&self.0).into_iter()
-    }
-}
-
-fn rep_system<R>(
+fn spawn_reps<R>(
     mut commands: Commands,
-    q_parent: Query<(Entity, &Children, &RepresentationList<R>), Changed<RepresentationList<R>>>,
+    q_rep: Query<(Entity, &Parent, &R), Added<R>>,
+    q_parent: Query<&Children, With<Representable>>,
     q_atoms: Query<(&Element, &AtomPosition)>,
     q_bonds: Query<&BondIndices>,
-    q_reps: Query<(Entity, &R)>,
-    atom_mesh: Res<AtomMesh>,
     mut meshes: ResMut<Assets<Mesh>>,
     element_mats: Res<ElementMaterials>,
-    mut events: EventWriter<crate::camera::CamControlEvent>,
+    atom_mesh: Res<AtomMesh>,
+    mut ev_camera: EventWriter<crate::camera::CamControlEvent>,
 ) -> Result<()>
 where
-    R: Representation + Default,
+    R: Representation,
 {
-    for (parent, children, reps) in q_parent.iter() {
-        // wprintln!(
-        //     "Entity {parent:?} has changed {} representations: {reps:?}",
-        //     std::any::type_name::<R>()
-        // );
-        //TODO: Remove/amortize this allocation
-        let mut existing_reps = HashSet::new();
-        for &child in children.iter() {
-            // Remove reps missing from parent and keep track of the reps that exist
-            if let Ok(rep) = q_reps.get_component(child) {
-                if reps.contains(rep) {
-                    existing_reps.insert(rep.clone());
-                } else {
-                    // wprintln!("Deleting rep {rep:?} from {child:?}");
-                    commands.entity(child).despawn_recursive();
-                }
-            }
-        }
-        // Add reps missing from children
-        for rep in reps.0.difference(&existing_reps) {
-            for &child in children.iter() {
-                if let Ok(idcs) = q_bonds.get(child) {
+    let mut new_reps = false;
+    for (rep_entity, parent, rep) in q_rep.iter() {
+        if let Ok(siblings) = q_parent.get(parent.0) {
+            for &sibling in siblings.iter() {
+                if let Ok(idcs) = q_bonds.get(sibling) {
                     let (elem_a, pos_a) = q_atoms.get(idcs.0)?;
                     let (elem_b, pos_b) = q_atoms.get(idcs.1)?;
-                    // wprintln!("Drawing {rep:?} for bond between {elem_a} at {pos_a:?} and {elem_b} at {pos_b:?}");
                     rep.spawn_bond(
                         &mut commands,
-                        parent,
+                        rep_entity,
                         (elem_a, elem_b),
                         (pos_a, pos_b),
                         &mut meshes,
                         &element_mats,
                     )
                 }
-                if let Ok((elem, pos)) = q_atoms.get(child) {
-                    // wprintln!("Drawing {rep:?} for {elem} atom at {pos:?}");
-                    rep.spawn_atom(&mut commands, parent, elem, pos, &atom_mesh, &element_mats)
+                if let Ok((elem, pos)) = q_atoms.get(sibling) {
+                    rep.spawn_atom(
+                        &mut commands,
+                        rep_entity,
+                        elem,
+                        pos,
+                        &atom_mesh,
+                        &element_mats,
+                    )
                 }
             }
+
             rep.spawn_others(
                 &mut commands,
-                parent,
-                &children,
+                rep_entity,
+                &siblings,
                 &q_atoms,
                 &q_bonds,
                 atom_mesh.as_ref(),
                 meshes.as_mut(),
                 element_mats.as_ref(),
             );
-            events.send(crate::camera::CamControlEvent::ReCenter);
+            new_reps = true;
         }
     }
+    if new_reps {
+        ev_camera.send(crate::camera::CamControlEvent::ReCenter);
+    };
     Ok(())
 }
 

@@ -1,7 +1,12 @@
 #![doc = include_str!("../README.md")]
 
 use bevy::app::AppExit;
-use std::path::{Path, PathBuf};
+#[cfg(debug_assertions)]
+use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf},
+};
 
 pub mod camera;
 use camera::MetalloproteinCameraPlugin;
@@ -15,7 +20,7 @@ pub mod gui;
 use gui::MetalloproteinGuiPlugin;
 
 pub mod representations;
-use representations::{RepresentableBundle, RepresentationPlugin};
+use representations::{DefaultRepresentationBundle, RepresentableBundle, RepresentationPlugin};
 
 pub mod prelude {
     pub use crate::wprintln;
@@ -27,8 +32,8 @@ pub mod prelude {
 use crate::prelude::*;
 
 fn main() {
-    App::new()
-        .insert_resource(Msaa { samples: 4 })
+    let mut app = App::new();
+    app.insert_resource(Msaa { samples: 4 })
         .insert_resource(ClearColor(Color::rgb(1.0, 1.0, 1.0)))
         .add_plugins(DefaultPlugins)
         .add_plugin(MetalloproteinCameraPlugin)
@@ -38,8 +43,13 @@ fn main() {
         .add_startup_system(setup)
         .add_system(read_file.chain(error_handler).before("representations"))
         .add_plugin(RepresentationPlugin)
-        .add_system(animate_light_direction)
-        .run();
+        .add_system(animate_light_direction);
+
+    #[cfg(debug_assertions)]
+    app.add_plugin(LogDiagnosticsPlugin::default())
+        .add_plugin(FrameTimeDiagnosticsPlugin::default());
+
+    app.run();
 }
 
 fn error_handler(In(result): In<Result<()>>, mut exit: EventWriter<AppExit>) {
@@ -110,15 +120,7 @@ fn setup(mut commands: Commands, mut ev_loadfile: EventWriter<LoadFile>) {
     #[cfg(target_arch = "wasm32")]
     {
         // wprintln!("Spawning a hydrogen molecule");
-        let parent = commands
-            .spawn_bundle((
-                Transform::default(),
-                GlobalTransform::default(),
-                Visibility::default(),
-                ComputedVisibility::default(),
-            ))
-            .insert_bundle(RepresentableBundle::default())
-            .id();
+        let parent = commands.spawn_bundle(RepresentableBundle::default()).id();
         let atom_a = chemicals::spawn_atom(&mut commands, parent, 1, Vec3::new(2.0, 2.0, 0.0));
         let atom_b = chemicals::spawn_atom(&mut commands, parent, 1, Vec3::new(3.0, 2.0, 0.0));
         chemicals::spawn_bond(&mut commands, parent, atom_a, atom_b);
@@ -148,17 +150,19 @@ where
     }
 }
 
+impl Display for StructureFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0.file_name().map(std::ffi::OsStr::to_str) {
+            Some(Some(s)) => write!(f, "{s}"),
+            Some(None) => write!(f, "File"),
+            None => write!(f, "File"),
+        }
+    }
+}
+
 fn read_file(mut commands: Commands, mut ev_loadfile: EventReader<LoadFile>) -> Result<()> {
     for LoadFile { path } in ev_loadfile.iter() {
-        let entity = commands
-            .spawn_bundle((
-                StructureFile::from(path),
-                Transform::default(),
-                GlobalTransform::default(),
-                Visibility::default(),
-                ComputedVisibility::default(),
-            ))
-            .id();
+        let entity = commands.spawn_bundle((StructureFile::from(path),)).id();
 
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -174,7 +178,10 @@ fn read_file(mut commands: Commands, mut ev_loadfile: EventReader<LoadFile>) -> 
 
         commands
             .entity(entity)
-            .insert_bundle(RepresentableBundle::default());
+            .insert_bundle(RepresentableBundle::default())
+            .with_children(|parent| {
+                parent.spawn_bundle(DefaultRepresentationBundle::default());
+            });
     }
     Ok(())
 }

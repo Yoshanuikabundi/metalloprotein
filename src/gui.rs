@@ -8,7 +8,7 @@ use rfd::AsyncFileDialog;
 use rfd::FileHandle;
 use std::path::PathBuf;
 use crate::camera::CamControlEvent;
-use crate::representations::{BorrowAllRepLists, BorrowAllRepListsTupleWithEntity};
+use crate::representations::{QueryAnyRep, RepIter};
 #[cfg(target_arch="wasm32")]
 use std::sync::RwLock;
 
@@ -28,31 +28,19 @@ fn ui_system(
     mut egui_ctx: ResMut<EguiContext>,
     thread_pool: Res<IoTaskPool>,
     mut ev_camera: EventWriter<CamControlEvent>,
-    q_reps: Query<BorrowAllRepListsTupleWithEntity>,
-    q_structs: Query<&StructureFile>
+    q_reps: QueryAnyRep,
+    q_structs: Query<(Entity, &StructureFile, &Children)>
 ) {
     egui::SidePanel::left("side_panel")
-        .default_width(200.0)
-        .max_width(200.0)
         .show(egui_ctx.ctx_mut(), |ui| {
-            for tuple in q_reps.iter() {
-                let entity = tuple.0;
-                let heading = if let Ok(file) = q_structs.get(entity) {
-                    if let Some(name) = file.0.file_name() {
-                        format!("{name:?}")
-                    } else {
-                        format!("{entity:?}")
-                    }
-                } else {
-                        format!("{entity:?}")
-                };
+            for (structure_entity, structure_file, children) in q_structs.iter() {
+                let heading = format!("{structure_entity:#?}:{structure_file}");
                 ui.collapsing(heading, |ui| {
-                    let tuple = BorrowAllRepLists::from(tuple);
-                    tuple.for_each_iter(|reps| {
-                        for rep in reps {
+                    for (entity, rep) in q_reps.iter().flat_map(RepIter::from) {
+                        if children.contains(&entity) {
                             ui.label(format!("{rep:?}"));
                         }
-                    })
+                    }
                 });
             }
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
@@ -69,6 +57,7 @@ fn ui_system(
                     if ui.button("Center").clicked() {
                         ev_camera.send(CamControlEvent::ReCenter)
                     };
+                    if ui.button("Add").clicked() {};
                     if ui.button("Remove").clicked() {};
                 });
             });
