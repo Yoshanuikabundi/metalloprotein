@@ -1,6 +1,7 @@
 use crate::chemicals::AtomPosition;
 use crate::prelude::*;
 use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
+use bevy_egui::EguiContext;
 use std::cmp::max_by;
 use std::cmp::Ordering;
 use std::f32::consts::PI;
@@ -65,6 +66,7 @@ fn camera_input_map(
     mut mouse_motion: EventReader<MouseMotion>,
     mouse_buttons: Res<Input<MouseButton>>,
     keyboard: Res<Input<KeyCode>>,
+    mut egui_ctx: ResMut<EguiContext>,
     windows: Res<Windows>,
 ) {
     let orbit_button = MouseButton::Left;
@@ -83,22 +85,6 @@ fn camera_input_map(
 
     let cursor_delta: Vec2 = mouse_motion.iter().map(|v| &v.delta).sum();
 
-    if mouse_buttons.pressed(orbit_button) {
-        let delta = mouse_rotate_sensitivity * cursor_delta / window;
-        events.send(CamControlEvent::Orbit(delta));
-    }
-    if mouse_buttons.pressed(roll_button) {
-        let delta = mouse_roll_sensitivity * cursor_delta / window;
-        events.send(CamControlEvent::Roll(delta));
-    }
-    if mouse_buttons.pressed(pan_button) {
-        let delta = mouse_translate_sensitivity * cursor_delta / window;
-        events.send(CamControlEvent::Pan(delta));
-    }
-    if keyboard.just_pressed(recenter_button) {
-        events.send(CamControlEvent::ReCenter);
-    }
-
     let mut zoom = 0.0;
     for event in mouse_wheel.iter() {
         // scale the event magnitude per pixel or per line
@@ -108,8 +94,28 @@ fn camera_input_map(
         };
         zoom += scroll_amount * mouse_wheel_zoom_sensitivity;
     }
-    if zoom.abs() > 0.0 {
-        events.send(CamControlEvent::Zoom(zoom));
+
+    if !egui_ctx.ctx_mut().wants_pointer_input() {
+        if mouse_buttons.pressed(orbit_button) {
+            let delta = mouse_rotate_sensitivity * cursor_delta / window;
+            events.send(CamControlEvent::Orbit(delta));
+        }
+        if mouse_buttons.pressed(roll_button) {
+            let delta = mouse_roll_sensitivity * cursor_delta / window;
+            events.send(CamControlEvent::Roll(delta));
+        }
+        if mouse_buttons.pressed(pan_button) {
+            let delta = mouse_translate_sensitivity * cursor_delta / window;
+            events.send(CamControlEvent::Pan(delta));
+        }
+        if zoom.abs() > 0.0 {
+            events.send(CamControlEvent::Zoom(zoom));
+        }
+    }
+    if !egui_ctx.ctx_mut().wants_keyboard_input() {
+        if keyboard.just_pressed(recenter_button) {
+            events.send(CamControlEvent::ReCenter);
+        }
     }
 }
 
