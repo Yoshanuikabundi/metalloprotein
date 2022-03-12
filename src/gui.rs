@@ -8,7 +8,7 @@ use rfd::AsyncFileDialog;
 use rfd::FileHandle;
 use std::path::PathBuf;
 use crate::camera::CamControlEvent;
-use crate::representations::{QueryAnyRep, RepIter};
+use crate::representations::{QueryAnyRepMut, RepIterMut, ALL_REPRESENTATIONS, RepresentationEnum};
 #[cfg(target_arch="wasm32")]
 use std::sync::RwLock;
 
@@ -28,18 +28,35 @@ fn ui_system(
     mut egui_ctx: ResMut<EguiContext>,
     thread_pool: Res<IoTaskPool>,
     mut ev_camera: EventWriter<CamControlEvent>,
-    q_reps: QueryAnyRep,
-    q_structs: Query<(Entity, &StructureFile, &Children)>
+    mut q_reps: QueryAnyRepMut,
+    q_structs: Query<(Entity, &StructureFile, &Children)>,
+    mut q_vis: Query<&mut Visibility>,
+    mut rep_window_open: Local<bool>,
+    mut rep_window_entity: Local<Option<Entity>>,
+    mut selected_rep: Local<RepresentationEnum>,
 ) {
+    let ctx = egui_ctx.ctx_mut();
     egui::SidePanel::left("side_panel")
-        .show(egui_ctx.ctx_mut(), |ui| {
+        .show(ctx, |ui| {
             for (structure_entity, structure_file, children) in q_structs.iter() {
                 let heading = format!("{structure_entity:#?}:{structure_file}");
                 ui.collapsing(heading, |ui| {
-                    for (entity, rep) in q_reps.iter().flat_map(RepIter::from) {
-                        if children.contains(&entity) {
-                            ui.label(format!("{rep:?}"));
+                    for (rep_entity, mut rep) in q_reps.iter_mut().flat_map(RepIterMut::from) {
+                        if children.contains(&rep_entity) {
+                            ui.horizontal(|ui| {
+                                if let Ok(ref mut vis) = q_vis.get_mut(rep_entity) {
+                                    ui.checkbox(&mut vis.is_visible, "");
+                                }
+                                rep.representation().ui(ui);
+                                if ui.button("🗑").clicked() {
+                                    commands.entity(rep_entity).despawn_recursive();
+                                }
+                            });
                         }
+                    }
+                    if ui.button("+").clicked() {
+                        *rep_window_entity = Some(structure_entity);
+                        *rep_window_open = true;
                     }
                 });
             }
@@ -57,11 +74,47 @@ fn ui_system(
                     if ui.button("Center").clicked() {
                         ev_camera.send(CamControlEvent::ReCenter)
                     };
-                    if ui.button("Add").clicked() {};
-                    if ui.button("Remove").clicked() {};
                 });
             });
         });
+    if *rep_window_open {
+        egui::Window::new("New Representation").title_bar(false).show(ctx, |ui| {
+            egui::ComboBox::from_id_source("representation_dropdown")
+                .selected_text(selected_rep.name())
+                .show_ui(ui, |ui| {
+                    for rep in ALL_REPRESENTATIONS {
+                        ui.selectable_value(&mut *selected_rep, rep.clone(), rep.name());
+                    }
+                }
+            );
+
+            selected_rep.representation_mut().ui(ui);
+            ui.horizontal(|ui| {
+                if ui.button("Cancel").clicked() {
+                    *rep_window_open = false;
+                }
+                if ui.button("Add").clicked() {
+                    *rep_window_open = false;
+                    commands
+                        .entity(rep_window_entity.expect("Orphan representation window"))
+                        .with_children(|parent| {
+                            let mut child = parent.spawn_bundle((
+                                Transform::default(),
+                                GlobalTransform::default(),
+                                ComputedVisibility::default(),
+                                Visibility::default(),)
+                            );
+                            match selected_rep.clone() {
+                                RepresentationEnum::Licorice(inner) => child.insert(inner),
+                                RepresentationEnum::BallAndStick(inner) => child.insert(inner),
+                                RepresentationEnum::SpaceFill(inner) => child.insert(inner),
+                            };
+                        });
+                }
+            })
+        });
+
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

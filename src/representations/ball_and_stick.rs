@@ -11,14 +11,18 @@ pub struct BallAndStick {
 
 impl Default for BallAndStick {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BallAndStick {
+    pub const fn new() -> Self {
         Self {
             ball_radius: 30,
             stick_radius: 10,
         }
     }
-}
 
-impl BallAndStick {
     pub fn from_radii(ball: f32, stick: f32) -> Self {
         let mut out = Self::default();
         out.set_ball_radius(ball);
@@ -125,5 +129,19 @@ impl Representation for BallAndStick {
                 ..Default::default()
             });
         });
+    }
+
+    fn ui(&mut self, ui: &mut bevy_egui::egui::Ui) {
+        let mut r_ball = self.ball_radius();
+        let mut r_stick = self.stick_radius();
+        ui.label(Self::name());
+        ui.add(bevy_egui::egui::Slider::new(&mut r_ball, 0.0..=1.0));
+        ui.add(bevy_egui::egui::Slider::new(&mut r_stick, 0.0..=1.0));
+        self.set_ball_radius(r_ball);
+        self.set_stick_radius(r_stick);
+    }
+
+    fn name() -> &'static str {
+        "Ball and stick"
     }
 }

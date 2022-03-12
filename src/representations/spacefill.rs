@@ -7,6 +7,12 @@ use std::hash::Hash;
 #[derive(Component, PartialEq, Eq, Debug, Hash, Clone, Default)]
 pub struct SpaceFill;
 
+impl SpaceFill {
+    pub const fn new() -> Self {
+        SpaceFill
+    }
+}
+
 impl Representation for SpaceFill {
     fn spawn_atom(
         &self,
@@ -31,5 +37,13 @@ impl Representation for SpaceFill {
                 ..Default::default()
             });
         });
+    }
+
+    fn ui(&mut self, ui: &mut bevy_egui::egui::Ui) {
+        ui.label(Self::name());
+    }
+
+    fn name() -> &'static str {
+        "Space filling model"
     }
 }
