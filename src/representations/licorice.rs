@@ -56,7 +56,6 @@ impl Representation for Licorice {
 
     fn ui(&mut self, ui: &mut bevy_egui::egui::Ui) {
         let mut r = self.radius();
-        ui.label(Self::name());
         ui.add(bevy_egui::egui::Slider::new(&mut r, 0.0..=1.0));
         self.set_radius(r);
     }

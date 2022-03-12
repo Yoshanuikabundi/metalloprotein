@@ -1,6 +1,7 @@
 use crate::StructureFile;
 use crate::prelude::*;
 use crate::LoadFile;
+use crate::representations::Representation;
 use bevy::tasks::{IoTaskPool, Task};
 use bevy_egui::{egui, EguiContext, EguiPlugin};
 use futures_lite::future;
@@ -47,6 +48,7 @@ fn ui_system(
                                 if let Ok(ref mut vis) = q_vis.get_mut(rep_entity) {
                                     ui.checkbox(&mut vis.is_visible, "");
                                 }
+                                ui.label(rep.name());
                                 rep.representation().ui(ui);
                                 if ui.button("🗑").clicked() {
                                     commands.entity(rep_entity).despawn_recursive();
@@ -79,6 +81,7 @@ fn ui_system(
         });
     if *rep_window_open {
         egui::Window::new("New Representation").title_bar(false).show(ctx, |ui| {
+            ui.label(format!("for {rep_window_entity:?}"));
             egui::ComboBox::from_id_source("representation_dropdown")
                 .selected_text(selected_rep.name())
                 .show_ui(ui, |ui| {
@@ -98,16 +101,10 @@ fn ui_system(
                     commands
                         .entity(rep_window_entity.expect("Orphan representation window"))
                         .with_children(|parent| {
-                            let mut child = parent.spawn_bundle((
-                                Transform::default(),
-                                GlobalTransform::default(),
-                                ComputedVisibility::default(),
-                                Visibility::default(),)
-                            );
                             match selected_rep.clone() {
-                                RepresentationEnum::Licorice(inner) => child.insert(inner),
-                                RepresentationEnum::BallAndStick(inner) => child.insert(inner),
-                                RepresentationEnum::SpaceFill(inner) => child.insert(inner),
+                                RepresentationEnum::Licorice(inner) => parent.spawn_bundle(inner.into_bundle()),
+                                RepresentationEnum::BallAndStick(inner) => parent.spawn_bundle(inner.into_bundle()),
+                                RepresentationEnum::SpaceFill(inner) => parent.spawn_bundle(inner.into_bundle()),
                             };
                         });
                 }

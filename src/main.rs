@@ -20,7 +20,9 @@ pub mod gui;
 use gui::MetalloproteinGuiPlugin;
 
 pub mod representations;
-use representations::{DefaultRepresentationBundle, RepresentableBundle, RepresentationPlugin};
+use representations::{
+    DefaultRepresentationBundle, RecenterWhenDone, RepresentableBundle, RepresentationPlugin,
+};
 
 pub mod prelude {
     pub use crate::wprintln;
@@ -41,7 +43,7 @@ fn main() {
         .add_event::<LoadFile>()
         .init_resource::<ElementMaterials>()
         .add_startup_system(setup)
-        .add_system(read_file.chain(error_handler).before("representations"))
+        .add_system(read_file.chain(error_handler))
         .add_plugin(RepresentationPlugin)
         .add_system(animate_light_direction);
 
@@ -180,7 +182,9 @@ fn read_file(mut commands: Commands, mut ev_loadfile: EventReader<LoadFile>) -> 
             .entity(entity)
             .insert_bundle(RepresentableBundle::default())
             .with_children(|parent| {
-                parent.spawn_bundle(DefaultRepresentationBundle::default());
+                parent
+                    .spawn_bundle(DefaultRepresentationBundle::default())
+                    .insert(RecenterWhenDone);
             });
     }
     Ok(())

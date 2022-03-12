@@ -42,6 +42,7 @@
 
 use bevy_egui::egui::Ui;
 
+use crate::camera::CamControlEvent;
 use crate::chemicals::{AtomPosition, BondIndices, Element};
 use crate::error_handler;
 use crate::prelude::*;
@@ -136,6 +137,12 @@ macro_rules! representations {
                     $(&RepresentationEnumRef::$struc(inner) => inner),+
                 }
             }
+
+            pub fn name(&self) -> &'static str {
+                match self {
+                    $(RepresentationEnumRef::$struc(_) => $struc::name()),+,
+                }
+            }
         }
 
         $(
@@ -190,6 +197,12 @@ macro_rules! representations {
             pub fn representation(&mut self) -> &mut dyn Representation {
                 match self {
                     $(RepresentationEnumMut::$struc(ref mut inner) => &mut **inner),+
+                }
+            }
+
+            pub fn name(&self) -> &'static str {
+                match self {
+                    $(RepresentationEnumMut::$struc(_) => $struc::name()),+,
                 }
             }
         }
@@ -281,6 +294,10 @@ pub struct RepresentableBundle {
     representable: Representable,
 }
 
+/// Add this to a RepresentationBundle to recenter the view once the representation is done loading
+#[derive(Component)]
+pub struct RecenterWhenDone;
+
 pub trait Representation: std::fmt::Debug {
     fn spawn_atom(
         &self,
@@ -321,7 +338,7 @@ pub trait Representation: std::fmt::Debug {
     }
 
     /// egui interface for updating or creating a rep
-    fn ui(&mut self, ui: &mut Ui);
+    fn ui(&mut self, _ui: &mut Ui) {}
 
     ///
     fn into_bundle(self) -> RepresentationBundle<Self>
@@ -384,6 +401,8 @@ fn spawn_reps<R>(
     mut meshes: ResMut<Assets<Mesh>>,
     element_mats: Res<ElementMaterials>,
     atom_mesh: Res<AtomMesh>,
+    q_recenter: Query<&RecenterWhenDone>,
+    mut events: EventWriter<CamControlEvent>,
 ) -> Result<()>
 where
     R: Representation + Component + std::fmt::Debug + Eq + Clone,
@@ -392,7 +411,7 @@ where
         commands
             .entity(rep_entity)
             .insert(PreviousRep::from(rep.clone()));
-        println!("Spawning new bond meshes for {rep:?} in {parent:?}");
+        wprintln!("Spawning new bond meshes for {rep:?} in {parent:?}");
         // Bonds, atoms are stored in the rep's siblings
         if let Ok(siblings) = q_parent.get(parent) {
             for &sibling in siblings.iter() {
@@ -431,6 +450,11 @@ where
                 element_mats.as_ref(),
             );
         };
+        if q_recenter.get(rep_entity).is_ok() {
+            wprintln!("Recentering after spawning rep with RecenterWhenDone");
+            events.send(CamControlEvent::ReCenter);
+            commands.entity(rep_entity).remove::<RecenterWhenDone>();
+        }
     }
     Ok(())
 }

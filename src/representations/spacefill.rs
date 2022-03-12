@@ -39,10 +39,6 @@ impl Representation for SpaceFill {
         });
     }
 
-    fn ui(&mut self, ui: &mut bevy_egui::egui::Ui) {
-        ui.label(Self::name());
-    }
-
     fn name() -> &'static str {
         "Space filling model"
     }

@@ -1,3 +1,4 @@
+use crate::chemicals::AtomPosition;
 use crate::prelude::*;
 use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
 use std::cmp::max_by;
@@ -116,6 +117,7 @@ fn camera_control(
     mut q_cameras: Query<(&mut PanOrbitCamera, &mut Transform, &PerspectiveProjection)>,
     mut events: EventReader<CamControlEvent>,
     q_meshes: Query<&GlobalTransform, With<Handle<Mesh>>>,
+    q_atoms: Query<&AtomPosition>,
 ) {
     for (mut pan_orbit, mut transform, proj) in q_cameras.iter_mut() {
         let mut any = false;
@@ -152,22 +154,17 @@ fn camera_control(
                     pan_orbit.radius = f32::max(pan_orbit.radius, 0.05);
                 }
                 CamControlEvent::ReCenter => {
-                    let n = q_meshes.iter().count();
-                    if n > 0 {
-                        let xyz: Vec3 = q_meshes
-                            .iter()
-                            .map(|transform| &transform.translation)
-                            .sum();
-                        let cog = xyz / n as f32;
-
-                        let radius = q_meshes
-                            .iter()
-                            .map(|transform| (transform.translation - cog).length())
-                            .max_by(f32_cmp)
-                            .unwrap();
-
-                        pan_orbit.focus = cog;
-                        pan_orbit.radius = f32::max(radius * 3.0, 0.05);
+                    wprintln!("Got recenter command");
+                    if let Some((focus, radius)) =
+                        compute_new_center(|| q_meshes.iter().map(|trf| &trf.translation))
+                    {
+                        pan_orbit.focus = focus;
+                        pan_orbit.radius = radius;
+                    } else if let Some((focus, radius)) =
+                        compute_new_center(|| q_atoms.iter().map(|pos| &pos.0))
+                    {
+                        pan_orbit.focus = focus;
+                        pan_orbit.radius = radius;
                     }
                 }
             }
@@ -183,5 +180,33 @@ fn camera_control(
             transform.translation =
                 pan_orbit.focus + rot_matrix.mul_vec3(Vec3::new(0.0, 0.0, pan_orbit.radius));
         }
+    }
+}
+
+/// Compute the center and radius of a sphere enclosing all points
+///
+/// Points are given by a function that returns an
+/// iterator over some points. It is a logic error
+/// for the set of points to be different on subsequent
+/// calls of the function, though they may be in
+/// a different order.
+///
+/// Returns None if there are no points in the iterator.
+fn compute_new_center<'a, I: Iterator<Item = &'a Vec3>>(
+    points: impl Fn() -> I,
+) -> Option<(Vec3, f32)> {
+    let n = points().count();
+    if n > 0 {
+        let xyz: Vec3 = points().sum();
+        let focus = xyz / n as f32;
+
+        let radius = points()
+            .map(|pos| (*pos - focus).length())
+            .max_by(f32_cmp)
+            .unwrap();
+
+        Some((focus, f32::max(radius * 3.0, 0.05)))
+    } else {
+        None
     }
 }
