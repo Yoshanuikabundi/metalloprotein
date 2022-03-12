@@ -53,13 +53,15 @@ macro_rules! representations {
         /// The representation created when a new structure is spawned
         pub type DefaultRepresentation = $default_struc;
 
-        impl Default for RepresentationEnum {
-            fn default() -> Self {
-                Self::from($default_struc::default())
-            }
-        }
-
         representations! {$default_mod, $default_struc; $($mod, $struc);*;}
+    };
+
+    ($($mod_a:ident, $struc_a:ident);*; @default $default_mod:ident, $default_struc:ident; $($mod_b:ident, $struc_b:ident);*;) => {
+        representations! {@default $default_mod, $default_struc; $($mod_a, $struc_a);*; $($mod_b, $struc_b);*;}
+    };
+
+    ($($mod:ident, $struc:ident);*; @default $default_mod:ident, $default_struc:ident;) => {
+        representations! {@default $default_mod, $default_struc; $($mod, $struc);*;}
     };
 
     ($($mod:ident, $struc:ident);+;) => {
@@ -246,7 +248,12 @@ macro_rules! representations {
             }
         }
 
-        pub const ALL_REPRESENTATIONS: [RepresentationEnum; 3] = [$(
+        /// `const` array of every representation's default value in enum format
+        ///
+        /// Useful when you need to do something dynamically for each representation.
+        /// Using static dispatch by making your system generic over Representations
+        /// is usually preferred.
+        pub const DEFAULT_REPRESENTATIONS: [RepresentationEnum; 3] = [$(
             RepresentationEnum::$struc($struc::new())
         ),+];
 
@@ -266,8 +273,8 @@ macro_rules! representations {
 }
 
 representations! {
-    @default ball_and_stick, BallAndStick;
-    licorice, Licorice;
+    ball_and_stick, BallAndStick;
+    @default licorice, Licorice;
     spacefill, SpaceFill;
 }
 
@@ -281,6 +288,12 @@ pub struct RepresentationBundle<R: Representation + std::fmt::Debug + Default + 
 }
 
 pub type DefaultRepresentationBundle = RepresentationBundle<DefaultRepresentation>;
+
+impl Default for RepresentationEnum {
+    fn default() -> Self {
+        Self::from(DefaultRepresentation::default())
+    }
+}
 
 #[derive(Debug, Component, Default)]
 pub struct Representable;

@@ -1,15 +1,12 @@
-use crate::StructureFile;
+use crate::{StructureFile, LoadFile};
 use crate::prelude::*;
-use crate::LoadFile;
-use crate::representations::Representation;
+use crate::representations::{Representation, QueryAnyRepMut, RepresentationEnum, RepIterMut, DEFAULT_REPRESENTATIONS};
 use bevy::tasks::{IoTaskPool, Task};
 use bevy_egui::{egui, EguiContext, EguiPlugin};
 use futures_lite::future;
-use rfd::AsyncFileDialog;
-use rfd::FileHandle;
+use rfd::{AsyncFileDialog, FileHandle};
 use std::path::PathBuf;
 use crate::camera::CamControlEvent;
-use crate::representations::{QueryAnyRepMut, RepIterMut, ALL_REPRESENTATIONS, RepresentationEnum};
 #[cfg(target_arch="wasm32")]
 use std::sync::RwLock;
 
@@ -85,7 +82,7 @@ fn ui_system(
             egui::ComboBox::from_id_source("representation_dropdown")
                 .selected_text(selected_rep.name())
                 .show_ui(ui, |ui| {
-                    for rep in ALL_REPRESENTATIONS {
+                    for rep in DEFAULT_REPRESENTATIONS {
                         ui.selectable_value(&mut *selected_rep, rep.clone(), rep.name());
                     }
                 }
