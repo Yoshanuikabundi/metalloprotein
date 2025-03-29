@@ -16,11 +16,11 @@ serde = "1.0.136"
 thiserror = "1.0.30"
 eyre = "0.6.1"
 bevy_egui = "0.11.1"
-rfd = "0.8.0"
+rfd = "0.8.1"
 futures-lite = "1.12.0"
 
 [dependencies.bevy]
-version = "0.6"
+version = "0.6.1"
 # Disable the default features if there are any that you do not want
 default-features = false
 features = [

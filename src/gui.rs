@@ -42,7 +42,7 @@ fn ui_system(
                     for (rep_entity, mut rep) in q_reps.iter_mut().flat_map(RepIterMut::from) {
                         if children.contains(&rep_entity) {
                             ui.horizontal(|ui| {
-                                if let Ok(ref mut vis) = q_vis.get_mut(rep_entity) {
+                                if let Ok(ref mut vis) = q_vis.get_mut(structure_entity) {
                                     ui.checkbox(&mut vis.is_visible, "");
                                 }
                                 ui.label(rep.name());
@@ -132,9 +132,9 @@ impl From<FileHandle> for LoadMoleculeFileDialog{
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl Into<PathBuf> for LoadMoleculeFileDialog {
-    fn into(self) -> PathBuf {
-        self.0.path().into()
+impl From<LoadMoleculeFileDialog> for PathBuf {
+    fn from(dialog: LoadMoleculeFileDialog) -> PathBuf {
+        dialog.0.path().into()
     }
 }
 

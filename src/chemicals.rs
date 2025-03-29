@@ -11,7 +11,6 @@ pub fn spawn_atom(
         .spawn_bundle(AtomBundle {
             element: Element::new(atomic_number),
             atom_position: AtomPosition(xyz),
-            ..Default::default()
         })
         .id();
 

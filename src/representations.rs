@@ -49,21 +49,6 @@ use crate::prelude::*;
 use crate::ElementMaterials;
 
 macro_rules! representations {
-    (@default $default_mod:ident, $default_struc:ident; $($mod:ident, $struc:ident);*;) => {
-        /// The representation created when a new structure is spawned
-        pub type DefaultRepresentation = $default_struc;
-
-        representations! {$default_mod, $default_struc; $($mod, $struc);*;}
-    };
-
-    ($($mod_a:ident, $struc_a:ident);*; @default $default_mod:ident, $default_struc:ident; $($mod_b:ident, $struc_b:ident);*;) => {
-        representations! {@default $default_mod, $default_struc; $($mod_a, $struc_a);*; $($mod_b, $struc_b);*;}
-    };
-
-    ($($mod:ident, $struc:ident);*; @default $default_mod:ident, $default_struc:ident;) => {
-        representations! {@default $default_mod, $default_struc; $($mod, $struc);*;}
-    };
-
     ($($mod:ident, $struc:ident);+;) => {
         $(
             pub mod $mod;
@@ -274,7 +259,7 @@ macro_rules! representations {
 
 representations! {
     ball_and_stick, BallAndStick;
-    @default licorice, Licorice;
+    licorice, Licorice;
     spacefill, SpaceFill;
 }
 
@@ -286,6 +271,9 @@ pub struct RepresentationBundle<R: Representation + std::fmt::Debug + Default + 
     computed_visibility: ComputedVisibility,
     visibility: Visibility,
 }
+
+/// The representation created when a new structure is spawned
+pub type DefaultRepresentation = Licorice;
 
 pub type DefaultRepresentationBundle = RepresentationBundle<DefaultRepresentation>;
 
@@ -321,7 +309,6 @@ pub trait Representation: std::fmt::Debug {
         _atom_mesh: &AtomMesh,
         _element_mats: &ElementMaterials,
     ) {
-        ()
     }
 
     fn spawn_bond(
@@ -333,7 +320,6 @@ pub trait Representation: std::fmt::Debug {
         _meshes: &mut Assets<Mesh>,
         _element_mats: &ElementMaterials,
     ) {
-        ()
     }
 
     fn spawn_others(
@@ -347,7 +333,6 @@ pub trait Representation: std::fmt::Debug {
         _meshes: &mut Assets<Mesh>,
         _element_mats: &ElementMaterials,
     ) {
-        ()
     }
 
     /// egui interface for updating or creating a rep
@@ -393,9 +378,7 @@ where
     }
 }
 
-fn new_reps<'w, 's, 'a, 'b, R>(
-    q_rep: Query<'w, 's, (Entity, &'a Parent, &'b R), Added<R>>,
-) -> Vec<(Entity, Entity, R)>
+fn new_reps<R>(q_rep: Query<(Entity, &Parent, &R), Added<R>>) -> Vec<(Entity, Entity, R)>
 where
     R: Representation + Component + Clone,
 {
@@ -455,7 +438,7 @@ where
             rep.spawn_others(
                 &mut commands,
                 rep_entity,
-                &siblings,
+                siblings,
                 &q_atoms,
                 &q_bonds,
                 atom_mesh.as_ref(),

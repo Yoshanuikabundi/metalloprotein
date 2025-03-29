@@ -112,10 +112,8 @@ fn camera_input_map(
             events.send(CamControlEvent::Zoom(zoom));
         }
     }
-    if !egui_ctx.ctx_mut().wants_keyboard_input() {
-        if keyboard.just_pressed(recenter_button) {
-            events.send(CamControlEvent::ReCenter);
-        }
+    if !egui_ctx.ctx_mut().wants_keyboard_input() && keyboard.just_pressed(recenter_button) {
+        events.send(CamControlEvent::ReCenter);
     }
 }
 
@@ -134,15 +132,15 @@ fn camera_control(
                 CamControlEvent::Orbit(delta) => {
                     let yaw = Quat::from_rotation_y(-delta.x);
                     let pitch = Quat::from_rotation_x(-delta.y);
-                    transform.rotation = transform.rotation * yaw; // rotate around local y axis
-                    transform.rotation = transform.rotation * pitch; // rotate around local x axis
+                    transform.rotation *= yaw; // rotate around local y axis
+                    transform.rotation *= pitch; // rotate around local x axis
                 }
                 CamControlEvent::Roll(delta) => {
                     let delta = max_by(delta.x, -delta.y, |a, b| f32_cmp(&a.abs(), &b.abs()))
                         * std::f32::consts::PI
                         * 2.0;
                     let roll = Quat::from_rotation_z(-delta);
-                    transform.rotation = transform.rotation * roll; // rotate around local z axis
+                    transform.rotation *= roll; // rotate around local z axis
                 }
                 CamControlEvent::Pan(delta) => {
                     // make panning distance independent of resolution and FOV

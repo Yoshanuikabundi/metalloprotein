@@ -1,4 +1,6 @@
 #![doc = include_str!("../README.md")]
+#![allow(clippy::type_complexity, clippy::too_many_arguments)]
+#![forbid(unsafe_code)]
 
 use bevy::app::AppExit;
 #[cfg(debug_assertions)]
@@ -23,6 +25,8 @@ pub mod representations;
 use representations::{
     DefaultRepresentationBundle, RecenterWhenDone, RepresentableBundle, RepresentationPlugin,
 };
+
+// pub mod system;
 
 pub mod prelude {
     pub use crate::wprintln;
@@ -93,7 +97,6 @@ fn setup(mut commands: Commands, mut ev_loadfile: EventWriter<LoadFile>) {
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
         brightness: 0.5,
-        ..Default::default()
     });
 
     commands.spawn_bundle(DirectionalLightBundle {
