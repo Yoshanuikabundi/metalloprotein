@@ -13,7 +13,7 @@ categories = [] # Categories for discoverability. crates.io accepts a maximum of
 
 [dependencies]
 serde = "1.0.136"
-thiserror = "1.0.30"
+thiserror = "1.0.39"
 eyre = "0.6.1"
 bevy_egui = "0.11.1"
 rfd = "0.8.1"
